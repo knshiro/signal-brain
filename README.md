@@ -20,13 +20,22 @@ Output for one conversation lives at `brain/<source>/`. Multiple conversations c
 
 ## Install
 
-Requires Python 3.11 or newer and an Anthropic API key.
+Requires Python 3.11 or newer. **No Anthropic API key needed** — the LLM-shaped work is done by your agent runtime (Claude Code or OpenAI Codex) via subagents.
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-export ANTHROPIC_API_KEY=...
+
+# Make the build skill available to Claude Code and Codex
+bash scripts/install-skills.sh
+```
+
+On Codex, also enable subagent dispatch by adding the following to `~/.codex/config.toml`:
+
+```toml
+[features]
+multi_agent = true
 ```
 
 ## Quickstart
@@ -36,16 +45,32 @@ Assuming you have already run `pipx install signal-export && sigexport ~/signal-
 ```bash
 # Discover available conversations
 signal-brain list-sources
+```
 
-# Run the pipeline for one source
-signal-brain ingest        --source SébastienBéal
-signal-brain build-wiki    --source SébastienBéal
-signal-brain build-index   --source SébastienBéal
-signal-brain link          --source SébastienBéal --stage all
-signal-brain lint          --source SébastienBéal
+Then, from inside Claude Code or Codex, invoke the skill:
 
-# Tune the burst threshold by sampling boundaries
-signal-brain evaluate-bursts --source SébastienBéal --sample-size 20
+```
+/signal-brain-build
+```
+
+(or describe what you want — "build the SébastienBéal brain" — and the runtime will pick up the skill from its trigger description). The skill drives the full pipeline end-to-end: ingest → wiki synthesis → links → lint. It dispatches subagents for the LLM-shaped work and does not call any external API.
+
+If you need to drive the pipeline step-by-step (for debugging, partial rebuilds, or custom orchestration), every stage is also available as a two-phase CLI command:
+
+```bash
+# Stage with LLM work — two-phase (--plan emits a todo file; agent fills it; --finalize consumes the done file)
+signal-brain ingest --plan        --source SébastienBéal
+signal-brain ingest --finalize    --source SébastienBéal
+signal-brain build-wiki --plan    --source SébastienBéal
+signal-brain build-wiki --finalize --source SébastienBéal
+signal-brain link --stage 2 --plan    --source SébastienBéal
+signal-brain link --stage 2 --finalize --source SébastienBéal
+
+# Deterministic stages — no agent involvement
+signal-brain build-index --source SébastienBéal
+signal-brain link --stage 1 --source SébastienBéal
+signal-brain lint        --source SébastienBéal
+signal-brain evaluate-bursts --plan --source SébastienBéal --sample-size 20
 ```
 
 If `out/` contains exactly one source directory, `--source` may be omitted.
@@ -54,9 +79,13 @@ If `out/` contains exactly one source directory, `--source` may be omitted.
 
 ```
 signal-convo/
-  scripts/signal_brain/    # Python package
-  scripts/tests/           # pytest suite (66 tests)
-  docs/superpowers/        # design spec + implementation plan
+  scripts/signal_brain/    # Python package — deterministic backbone + plan/finalize CLI
+  scripts/tests/           # pytest suite (all offline; no API key)
+  scripts/install-skills.sh # symlinks skills/ into ~/.claude/skills and ~/.codex/skills
+  skills/
+    signal-brain-build/    # orchestrator skill (works on Claude Code and Codex)
+      SKILL.md
+  docs/superpowers/        # design specs + implementation plans
   out/<source>/            # raw sigexport input (untouched)
   brain/                        # gitignored except for two files
     AGENTS.md                   # canonical agent guide for reading any source (committed)
@@ -65,7 +94,7 @@ signal-convo/
       index.md
       log.md
       lint-report.md
-      data/                     # machine layer (regeneratable)
+      data/                     # machine layer (regeneratable; also holds todo/done worklists)
       people/ concepts/ positions/ arcs/ cross/
   config.toml              # tunable knobs
   AGENTS.md                # this file's sibling — project-level dev notes
@@ -92,10 +121,6 @@ threshold_minutes = 60
 min_burst_count = 2
 min_msg_count = 20
 
-[llm]
-tagging_model = "claude-haiku-4-5-20251001"
-synthesis_model = "claude-sonnet-4-6"
-
 [tagging]
 # Optional one-sentence context hint about this conversation.
 # Empty = the tagger stays neutral. Example: "two French friends debating politics and economics".
@@ -115,14 +140,16 @@ source .venv/bin/activate
 pytest -q
 ```
 
-LLM-touching code is mocked; no API key needed for the test suite.
+All tests run offline; no API key needed.
 
 ## Documentation
 
-- Design spec: [`docs/superpowers/specs/2026-05-19-signal-convo-brain-design.md`](docs/superpowers/specs/2026-05-19-signal-convo-brain-design.md)
-- Implementation plan: [`docs/superpowers/plans/2026-05-19-signal-convo-brain.md`](docs/superpowers/plans/2026-05-19-signal-convo-brain.md)
+- Original design spec: [`docs/superpowers/specs/2026-05-19-signal-convo-brain-design.md`](docs/superpowers/specs/2026-05-19-signal-convo-brain-design.md)
+- No-API-key redesign spec: [`docs/superpowers/specs/2026-05-19-no-api-key-build-redesign.md`](docs/superpowers/specs/2026-05-19-no-api-key-build-redesign.md)
+- Implementation plans under [`docs/superpowers/plans/`](docs/superpowers/plans/)
 - Known deferred issues: [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)
 - Agent guide for reading any brain source: `brain/AGENTS.md`
+- Orchestrator skill (used by Claude Code / Codex to build a brain): [`skills/signal-brain-build/SKILL.md`](skills/signal-brain-build/SKILL.md)
 
 ## License
 
