@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg
+brain/*
+!brain/AGENTS.md
+!brain/CLAUDE.md
+.env
+out/

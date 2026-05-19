@@ -1,0 +1,1 @@
+"""Wiki page generation."""

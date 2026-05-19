@@ -1,0 +1,50 @@
+{"date": "2026-01-01T09:00:00.000000", "sender": "Me", "body": "Hello!", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T09:07:00.000000", "sender": "Friend", "body": "How are you?", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T09:14:00.000000", "sender": "Me", "body": "Doing fine, thanks.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T09:21:00.000000", "sender": "Friend", "body": "Want to grab lunch this week?", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T09:28:00.000000", "sender": "Me", "body": "Sure, Wednesday works.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T09:35:00.000000", "sender": "Friend", "body": "Great, let's say noon at the usual place.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T09:42:00.000000", "sender": "Me", "body": "Did you see the news this morning?", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T09:49:00.000000", "sender": "Friend", "body": "Yes, surprising.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T09:56:00.000000", "sender": "Me", "body": "What did you think about the meeting?", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T10:03:00.000000", "sender": "Friend", "body": "Mixed feelings honestly.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T10:10:00.000000", "sender": "Me", "body": "Need to finish this report by Friday.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T10:17:00.000000", "sender": "Friend", "body": "Good luck \u2014 let me know if you need help.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T10:24:00.000000", "sender": "Me", "body": "Picking up the kids soon.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T10:31:00.000000", "sender": "Friend", "body": "Have a good evening!", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T10:38:00.000000", "sender": "Me", "body": "You too.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T10:45:00.000000", "sender": "Friend", "body": "Quick question about the project.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T10:52:00.000000", "sender": "Me", "body": "Shoot.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T10:59:00.000000", "sender": "Friend", "body": "Should we use Postgres or SQLite?", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T11:06:00.000000", "sender": "Me", "body": "Postgres for production, SQLite is fine for local tests.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T11:13:00.000000", "sender": "Friend", "body": "Makes sense, thanks.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T11:20:00.000000", "sender": "Me", "body": "Watched a good documentary last night.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T11:27:00.000000", "sender": "Friend", "body": "Oh? Which one?", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T11:34:00.000000", "sender": "Me", "body": "About climate adaptation.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T11:41:00.000000", "sender": "Friend", "body": "Sounds heavy.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T11:48:00.000000", "sender": "Me", "body": "It was, but well done.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T11:55:00.000000", "sender": "Friend", "body": "Will check it out this weekend.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T12:02:00.000000", "sender": "Me", "body": "Coffee tomorrow?", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T12:09:00.000000", "sender": "Friend", "body": "Yes please.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T12:16:00.000000", "sender": "Me", "body": "9am at the corner cafe?", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T12:23:00.000000", "sender": "Friend", "body": "Perfect.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T12:30:00.000000", "sender": "Me", "body": "Running late, be there in 10.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T12:37:00.000000", "sender": "Friend", "body": "No worries.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T12:44:00.000000", "sender": "Me", "body": "Did the deploy go through?", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T12:51:00.000000", "sender": "Friend", "body": "Yep, all green.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T12:58:00.000000", "sender": "Me", "body": "Nice work.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T13:05:00.000000", "sender": "Friend", "body": "Saw a great article about caching strategies.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T13:12:00.000000", "sender": "Me", "body": "Send it over?", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T13:19:00.000000", "sender": "Friend", "body": "Just did.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T13:26:00.000000", "sender": "Me", "body": "Got it, will read tonight.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T13:33:00.000000", "sender": "Friend", "body": "Weekend plans?", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T13:40:00.000000", "sender": "Me", "body": "Just relaxing.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T13:47:00.000000", "sender": "Friend", "body": "Same here.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T13:54:00.000000", "sender": "Me", "body": "Heading to bed.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T14:01:00.000000", "sender": "Friend", "body": "Talk tomorrow!", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T14:08:00.000000", "sender": "Me", "body": "Sleep well.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T14:15:00.000000", "sender": "Friend", "body": "By the way, happy birthday!", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T14:22:00.000000", "sender": "Me", "body": "Thanks!! How did you remember?", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T14:29:00.000000", "sender": "Friend", "body": "Calendar reminder.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T14:36:00.000000", "sender": "Me", "body": "Ha, cheating.", "quote": "", "sticker": "", "reactions": [], "attachments": []}
+{"date": "2026-01-01T14:43:00.000000", "sender": "Friend", "body": "Effective though.", "quote": "", "sticker": "", "reactions": [], "attachments": []}

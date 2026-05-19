@@ -1,0 +1,40 @@
+# Knobs. Lint reports when current data suggests retuning.
+
+[bursts]
+threshold_minutes = 60
+
+[arcs]
+min_burst_count = 2
+min_msg_count = 20
+
+[cross_pages]
+min_occurrences = 3
+
+[lint]
+stale_claim_ingestion_count = 5
+position_evolution_threshold = 2
+
+[llm]
+tagging_model = "claude-haiku-4-5-20251001"
+synthesis_model = "claude-sonnet-4-6"
+max_retries = 3
+
+[paths]
+out_root = "out"
+brain_root = "brain"
+
+[me]
+# Identity used in the generated wiki for the "Me"-labeled sender.
+# sender_label is the literal label Signal export uses for the exporter's own messages.
+sender_label = "Me"
+slug = "thomas-martin"
+name = "Thomas Martin"
+
+[tagging]
+# Optional one-sentence context hint about this conversation.
+# Empty = the tagger stays neutral. Example: "two French friends debating politics and economics".
+description = ""
+
+# Optional seed topic vocabulary. Empty = the LLM proposes freely.
+# Add slugs like ["billionaires", "taiwan"] to bias tagging toward known themes.
+seed_tags = []
