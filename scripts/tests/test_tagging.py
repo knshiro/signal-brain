@@ -1,8 +1,18 @@
+"""Tests for the tagging plan/finalize phases.
+
+The tagger no longer calls an LLM directly. `emit_tagging_todos` writes a
+todo file; `finalize_tagging` reads a done file (the agent provides) and
+writes chunks.jsonl.
+"""
 import json
 from signal_brain.tagging import (
-    tag_bursts, _render_burst_for_tagging,
-    build_system_prompt, build_user_prompt,
+    build_system_prompt,
+    build_user_prompt,
+    emit_tagging_todos,
+    finalize_tagging,
+    _render_burst_for_tagging,
 )
+from signal_brain.worklist import load_todo
 
 
 def test_render_burst_includes_messages():
@@ -14,41 +24,127 @@ def test_render_burst_includes_messages():
     assert "Hello there" in text
 
 
-def test_tag_bursts_reuses_cache_when_hash_unchanged(tmp_data_dir, mocker):
+def test_emit_tagging_todos_skips_cache_hits(tmp_path, mocker):
     bursts = [{"id": "B0001", "msg_ids": ["a::Me"], "start": "2026-05-05T13:00:00"}]
     msgs = [{"msg_id": "a::Me", "sender": "Me", "body": "hi", "date": "2026-05-05T13:00:00"}]
-    mock_llm = mocker.MagicMock()
     cache = {"B0001": {"hash": "sha1:cached", "topics": ["banter"],
                        "primary": "banter", "summary": "cached"}}
     mocker.patch("signal_brain.tagging.burst_content_hash", return_value="sha1:cached")
-    out = tmp_data_dir / "chunks.jsonl"
-    tag_bursts(bursts, msgs, mock_llm, cache_by_id=cache, out_path=out)
-    mock_llm.complete_json.assert_not_called()
-    rows = [json.loads(l) for l in out.read_text(encoding="utf-8").splitlines()]
-    assert rows[0]["primary"] == "banter"
+    todo = tmp_path / "tagging.todo.jsonl"
+    hashes = emit_tagging_todos(bursts, msgs, cache, todo)
+    assert hashes == {"B0001": "sha1:cached"}
+    assert load_todo(todo) == []  # cache hit, nothing to do
 
 
-def test_tag_bursts_calls_llm_on_cache_miss(tmp_data_dir, mocker):
+def test_emit_tagging_todos_emits_when_cache_miss(tmp_path, mocker):
     bursts = [{"id": "B0002", "msg_ids": ["a::Me"], "start": "2026-05-05T14:00:00"}]
     msgs = [{"msg_id": "a::Me", "sender": "Me", "body": "Talking about X",
              "date": "2026-05-05T14:00:00"}]
-    mock_llm = mocker.MagicMock()
-    mock_llm.complete_json.return_value = {
-        "topics": ["topic-x"], "primary": "topic-x", "summary": "Discusses X.",
-    }
     mocker.patch("signal_brain.tagging.burst_content_hash", return_value="sha1:new")
-    out = tmp_data_dir / "chunks.jsonl"
-    tag_bursts(bursts, msgs, mock_llm, cache_by_id={}, out_path=out)
-    assert mock_llm.complete_json.call_count == 1
-    row = json.loads(out.read_text(encoding="utf-8").splitlines()[0])
-    assert row["primary"] == "topic-x"
+    todo = tmp_path / "tagging.todo.jsonl"
+    emit_tagging_todos(bursts, msgs, cache_by_id={}, todo_path=todo)
+    rows = load_todo(todo)
+    assert len(rows) == 1
+    assert rows[0]["stage"] == "tagging"
+    assert rows[0]["kind"] == "burst"
+    assert rows[0]["context"]["burst_id"] == "B0002"
+    assert "Talking about X" in rows[0]["user_prompt"]
+
+
+def test_emit_is_idempotent_under_replan(tmp_path, mocker):
+    """Re-running plan with no content changes must not duplicate rows."""
+    bursts = [{"id": "B0003", "msg_ids": ["a::Me"], "start": "2026-05-05T15:00:00"}]
+    msgs = [{"msg_id": "a::Me", "sender": "Me", "body": "hi",
+             "date": "2026-05-05T15:00:00"}]
+    mocker.patch("signal_brain.tagging.burst_content_hash", return_value="sha1:new")
+    todo = tmp_path / "tagging.todo.jsonl"
+    emit_tagging_todos(bursts, msgs, {}, todo)
+    emit_tagging_todos(bursts, msgs, {}, todo)
+    assert len(load_todo(todo)) == 1
+
+
+def test_finalize_tagging_consumes_done_rows(tmp_path, mocker):
+    bursts = [{"id": "B0010", "msg_ids": ["a::Me"], "start": "2026-05-05T16:00:00"}]
+    msgs = [{"msg_id": "a::Me", "sender": "Me", "body": "Let's talk Y",
+             "date": "2026-05-05T16:00:00"}]
+    mocker.patch("signal_brain.tagging.burst_content_hash", return_value="sha1:y")
+
+    todo = tmp_path / "tagging.todo.jsonl"
+    emit_tagging_todos(bursts, msgs, {}, todo)
+    todo_row = load_todo(todo)[0]
+    done = tmp_path / "tagging.done.jsonl"
+    done.write_text(json.dumps({
+        "job_id": todo_row["job_id"],
+        "response": {"topics": ["topic-y"], "primary": "topic-y",
+                     "summary": "Discusses Y."},
+    }) + "\n", encoding="utf-8")
+
+    chunks = tmp_path / "chunks.jsonl"
+    stats = finalize_tagging(bursts, {}, todo, done, chunks)
+    assert stats["new"] == 1
+    assert stats["cached"] == 0
+    assert stats["missing"] == []
+    row = json.loads(chunks.read_text(encoding="utf-8").splitlines()[0])
+    assert row["primary"] == "topic-y"
+
+
+def test_finalize_tagging_reuses_cache_when_no_todo(tmp_path, mocker):
+    """A burst whose hash matches the cache yields a chunks row from cache, no todo."""
+    bursts = [{"id": "B0020", "msg_ids": ["a::Me"], "start": "2026-05-05T17:00:00"}]
+    msgs = [{"msg_id": "a::Me", "sender": "Me", "body": "hi",
+             "date": "2026-05-05T17:00:00"}]
+    mocker.patch("signal_brain.tagging.burst_content_hash", return_value="sha1:cached")
+    cache = {"B0020": {"hash": "sha1:cached", "topics": ["banter"],
+                       "primary": "banter", "summary": "cached row"}}
+
+    todo = tmp_path / "tagging.todo.jsonl"
+    emit_tagging_todos(bursts, msgs, cache, todo)  # cache hit, no todo emitted
+    done = tmp_path / "tagging.done.jsonl"
+    chunks = tmp_path / "chunks.jsonl"
+    stats = finalize_tagging(bursts, cache, todo, done, chunks)
+    assert stats["new"] == 0
+    assert stats["cached"] == 1
+    row = json.loads(chunks.read_text(encoding="utf-8").splitlines()[0])
+    assert row["summary"] == "cached row"
+
+
+def test_finalize_tagging_reports_missing_when_done_absent(tmp_path, mocker):
+    bursts = [{"id": "B0030", "msg_ids": ["a::Me"], "start": "2026-05-05T18:00:00"}]
+    msgs = [{"msg_id": "a::Me", "sender": "Me", "body": "hi",
+             "date": "2026-05-05T18:00:00"}]
+    mocker.patch("signal_brain.tagging.burst_content_hash", return_value="sha1:miss")
+    todo = tmp_path / "tagging.todo.jsonl"
+    emit_tagging_todos(bursts, msgs, {}, todo)
+    done = tmp_path / "tagging.done.jsonl"  # never created
+    chunks = tmp_path / "chunks.jsonl"
+    stats = finalize_tagging(bursts, {}, todo, done, chunks)
+    assert stats["new"] == 0
+    assert stats["missing"] == ["B0030"]
+
+
+def test_finalize_tagging_reports_invalid_schema(tmp_path, mocker):
+    bursts = [{"id": "B0040", "msg_ids": ["a::Me"], "start": "2026-05-05T19:00:00"}]
+    msgs = [{"msg_id": "a::Me", "sender": "Me", "body": "hi",
+             "date": "2026-05-05T19:00:00"}]
+    mocker.patch("signal_brain.tagging.burst_content_hash", return_value="sha1:bad")
+    todo = tmp_path / "tagging.todo.jsonl"
+    emit_tagging_todos(bursts, msgs, {}, todo)
+    todo_row = load_todo(todo)[0]
+    done = tmp_path / "tagging.done.jsonl"
+    done.write_text(json.dumps({
+        "job_id": todo_row["job_id"],
+        "response": {"primary": "x"},  # missing topics and summary
+    }) + "\n", encoding="utf-8")
+    chunks = tmp_path / "chunks.jsonl"
+    stats = finalize_tagging(bursts, {}, todo, done, chunks)
+    assert stats["invalid"] == ["B0040"]
+    assert chunks.read_text(encoding="utf-8") == ""  # no rows written
 
 
 def test_system_prompt_neutral_by_default():
     prompt = build_system_prompt()
     assert "Signal conversation between two people" in prompt
-    assert "French" not in prompt
-    assert "politics" not in prompt
+    assert "Context:" not in prompt
 
 
 def test_system_prompt_includes_description_when_given():
@@ -71,18 +167,16 @@ def test_user_prompt_includes_seed_tags_when_provided():
     assert "topic-b" in prompt
 
 
-def test_tag_bursts_forwards_description_and_seed_tags_to_prompt(tmp_data_dir, mocker):
-    """When called with hints, they should reach the LLM via the prompts."""
-    bursts = [{"id": "B0001", "msg_ids": ["a::Me"], "start": "2026-05-05T13:00:00"}]
-    msgs = [{"msg_id": "a::Me", "sender": "Me", "body": "hi", "date": "2026-05-05T13:00:00"}]
-    mock_llm = mocker.MagicMock()
-    mock_llm.complete_json.return_value = {"topics": ["t"], "primary": "t", "summary": "s"}
-    mocker.patch("signal_brain.tagging.burst_content_hash", return_value="sha1:new")
-    tag_bursts(bursts, msgs, mock_llm, cache_by_id={}, out_path=tmp_data_dir / "chunks.jsonl",
-               description="two friends talking shop", seed_tags=["work", "life"])
-    call = mock_llm.complete_json.call_args
-    system, user = call.args[0], call.args[1]
-    assert "Context: two friends talking shop" in system
-    assert "Seed tags" in user
-    assert "work" in user
-    assert "life" in user
+def test_emit_forwards_description_and_seed_tags_into_prompts(tmp_path, mocker):
+    bursts = [{"id": "B0050", "msg_ids": ["a::Me"], "start": "2026-05-05T20:00:00"}]
+    msgs = [{"msg_id": "a::Me", "sender": "Me", "body": "hi",
+             "date": "2026-05-05T20:00:00"}]
+    mocker.patch("signal_brain.tagging.burst_content_hash", return_value="sha1:n")
+    todo = tmp_path / "tagging.todo.jsonl"
+    emit_tagging_todos(bursts, msgs, {}, todo,
+                       description="two friends talking shop",
+                       seed_tags=["work", "life"])
+    row = load_todo(todo)[0]
+    assert "Context: two friends talking shop" in row["system_prompt"]
+    assert "Seed tags" in row["user_prompt"]
+    assert "work" in row["user_prompt"]

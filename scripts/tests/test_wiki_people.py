@@ -1,10 +1,8 @@
-from signal_brain.wiki.people import generate_person_page
+from signal_brain.wiki.people import build_person_prompts, render_person_page
 from signal_brain.wiki.schemas import parse_page, validate_page
 
 
-def test_generate_person_page_passes_schema(tmp_wiki_dir, mocker):
-    mock_llm = mocker.MagicMock()
-    mock_llm.complete.return_value.text = """## Background
+PERSON_BODY = """## Background
 Some background about Alice with a citation [B0001#m1].
 
 ## Style & drivers
@@ -22,12 +20,32 @@ Tensions.
 ## Related
 (auto-maintained)
 """
-    page = generate_person_page(
+
+
+def test_build_person_prompts_returns_tuple_and_fm():
+    system, user, schema, fm = build_person_prompts(
         slug="alice", name="Alice Example", relation="Me",
         bursts_summary="Bursts featuring Alice dominantly.",
-        sources_count=1138, llm=mock_llm,
+        sources_count=1138,
     )
-    fm, body = parse_page(page)
+    assert "person" in system.lower()
+    assert "Alice Example" in user
+    assert schema == {"required": ["body"], "types": {"body": "str"}}
     assert fm["type"] == "person"
     assert fm["slug"] == "alice"
-    validate_page("person", fm, body)
+    assert fm["name"] == "Alice Example"
+    assert fm["relation"] == "Me"
+    assert fm["sources_count"] == 1138
+
+
+def test_render_person_page_validates():
+    _, _, _, fm = build_person_prompts(
+        slug="alice", name="Alice Example", relation="Me",
+        bursts_summary="Bursts featuring Alice dominantly.",
+        sources_count=1138,
+    )
+    page = render_person_page(fm, PERSON_BODY)
+    parsed_fm, body = parse_page(page)
+    assert parsed_fm["type"] == "person"
+    assert parsed_fm["slug"] == "alice"
+    validate_page("person", parsed_fm, body)

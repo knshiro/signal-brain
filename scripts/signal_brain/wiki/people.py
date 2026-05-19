@@ -1,4 +1,4 @@
-"""People (entity) page generation."""
+"""People (entity) page generation — plan/finalize split."""
 from __future__ import annotations
 from datetime import date
 from signal_brain.wiki.schemas import render_page, validate_page
@@ -32,15 +32,18 @@ Conversation summary across all bursts featuring this person:
 Write the page body."""
 
 
-def generate_person_page(*, slug: str, name: str, relation: str,
-                         bursts_summary: str, sources_count: int, llm,
+PAGE_RESPONSE_SCHEMA = {"required": ["body"], "types": {"body": "str"}}
+
+
+def build_person_prompts(*, slug: str, name: str, relation: str,
+                         bursts_summary: str, sources_count: int,
                          drivers: list[str] | None = None,
-                         tics: list[str] | None = None) -> str:
+                         tics: list[str] | None = None) -> tuple[str, str, dict, dict]:
+    """Return (system_prompt, user_prompt, response_schema, planned_frontmatter)."""
     user = PERSON_USER.format(
         slug=slug, name=name, relation=relation,
         bursts_summary=bursts_summary, sources_count=sources_count,
     )
-    body = llm.complete(PERSON_SYSTEM, user, max_tokens=3000).text.strip()
     fm = {
         "type": "person",
         "slug": slug,
@@ -52,5 +55,9 @@ def generate_person_page(*, slug: str, name: str, relation: str,
         "sources_count": sources_count,
         "last_touched": date.today().isoformat(),
     }
-    validate_page("person", fm, body)
-    return render_page(fm, body)
+    return PERSON_SYSTEM, user, PAGE_RESPONSE_SCHEMA, fm
+
+
+def render_person_page(planned_fm: dict, body: str) -> str:
+    validate_page("person", planned_fm, body)
+    return render_page(planned_fm, body)

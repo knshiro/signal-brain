@@ -1,4 +1,7 @@
-"""Cross-cut page generation: agreements / disagreements / patterns / empirical pool."""
+"""Cross-cut page generation — plan/finalize split.
+
+Cross pages cover agreements / disagreements / rhetorical patterns / empirical pool.
+"""
 from __future__ import annotations
 from datetime import date
 from signal_brain.wiki.schemas import render_page, validate_page
@@ -24,13 +27,18 @@ Instances summary (deduplicated, with citations):
 Write the page body."""
 
 
-def generate_cross_page(*, slug: str, title: str, instances_summary: str, llm) -> str:
-    body = llm.complete(
-        CROSS_SYSTEM,
-        CROSS_USER.format(slug=slug, title=title, instances_summary=instances_summary),
-        max_tokens=3000,
-    ).text.strip()
+PAGE_RESPONSE_SCHEMA = {"required": ["body"], "types": {"body": "str"}}
+
+
+def build_cross_prompts(*, slug: str, title: str, instances_summary: str
+                        ) -> tuple[str, str, dict, dict]:
+    """Return (system_prompt, user_prompt, response_schema, planned_frontmatter)."""
+    user = CROSS_USER.format(slug=slug, title=title, instances_summary=instances_summary)
     fm = {"type": "cross", "slug": slug, "title": title,
           "last_touched": date.today().isoformat()}
-    validate_page("cross", fm, body)
-    return render_page(fm, body)
+    return CROSS_SYSTEM, user, PAGE_RESPONSE_SCHEMA, fm
+
+
+def render_cross_page(planned_fm: dict, body: str) -> str:
+    validate_page("cross", planned_fm, body)
+    return render_page(planned_fm, body)

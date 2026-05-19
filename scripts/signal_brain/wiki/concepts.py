@@ -1,4 +1,4 @@
-"""Concept page generation."""
+"""Concept page generation — plan/finalize split."""
 from __future__ import annotations
 from datetime import date
 from signal_brain.wiki.schemas import render_page, validate_page
@@ -29,13 +29,17 @@ Conversation summary on this topic:
 Write the page body."""
 
 
-def generate_concept_page(*, slug: str, aliases: list[str], contested: bool,
-                          sources_count: int, bursts_summary: str, llm) -> str:
+PAGE_RESPONSE_SCHEMA = {"required": ["body"], "types": {"body": "str"}}
+
+
+def build_concept_prompts(*, slug: str, aliases: list[str], contested: bool,
+                          sources_count: int, bursts_summary: str
+                          ) -> tuple[str, str, dict, dict]:
+    """Return (system_prompt, user_prompt, response_schema, planned_frontmatter)."""
     user = CONCEPT_USER.format(
         slug=slug, aliases=", ".join(aliases), contested=contested,
         sources_count=sources_count, bursts_summary=bursts_summary,
     )
-    body = llm.complete(CONCEPT_SYSTEM, user, max_tokens=3000).text.strip()
     fm = {
         "type": "concept",
         "slug": slug,
@@ -45,5 +49,9 @@ def generate_concept_page(*, slug: str, aliases: list[str], contested: bool,
         "sources_count": sources_count,
         "last_touched": date.today().isoformat(),
     }
-    validate_page("concept", fm, body)
-    return render_page(fm, body)
+    return CONCEPT_SYSTEM, user, PAGE_RESPONSE_SCHEMA, fm
+
+
+def render_concept_page(planned_fm: dict, body: str) -> str:
+    validate_page("concept", planned_fm, body)
+    return render_page(planned_fm, body)

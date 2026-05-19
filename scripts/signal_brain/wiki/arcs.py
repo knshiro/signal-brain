@@ -1,4 +1,4 @@
-"""Arc page generation — narrative summary of a debate arc."""
+"""Arc page generation — narrative summary of a debate arc. Plan/finalize split."""
 from __future__ import annotations
 from datetime import date
 from signal_brain.wiki.schemas import render_page, validate_page
@@ -30,15 +30,19 @@ Full per-burst summaries:
 Write the arc page body."""
 
 
-def generate_arc_page(*, arc_id: str, slug: str, period: list[str], bursts: list[str],
-                     primary_topic: str, bursts_summary: str, llm,
-                     status: str = "unresolved",
-                     turning_points: list[str] | None = None) -> str:
+PAGE_RESPONSE_SCHEMA = {"required": ["body"], "types": {"body": "str"}}
+
+
+def build_arc_prompts(*, arc_id: str, slug: str, period: list[str], bursts: list[str],
+                      primary_topic: str, bursts_summary: str,
+                      status: str = "unresolved",
+                      turning_points: list[str] | None = None
+                      ) -> tuple[str, str, dict, dict]:
+    """Return (system_prompt, user_prompt, response_schema, planned_frontmatter)."""
     user = ARC_USER.format(
         arc_id=arc_id, slug=slug, period=period, primary_topic=primary_topic,
         bursts=bursts, bursts_summary=bursts_summary,
     )
-    body = llm.complete(ARC_SYSTEM, user, max_tokens=4000).text.strip()
     fm = {
         "type": "arc", "id": arc_id, "slug": slug,
         "period": period, "bursts": bursts,
@@ -46,5 +50,9 @@ def generate_arc_page(*, arc_id: str, slug: str, period: list[str], bursts: list
         "turning_points": turning_points or [],
         "last_touched": date.today().isoformat(),
     }
-    validate_page("arc", fm, body)
-    return render_page(fm, body)
+    return ARC_SYSTEM, user, PAGE_RESPONSE_SCHEMA, fm
+
+
+def render_arc_page(planned_fm: dict, body: str) -> str:
+    validate_page("arc", planned_fm, body)
+    return render_page(planned_fm, body)
