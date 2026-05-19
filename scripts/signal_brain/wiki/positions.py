@@ -1,4 +1,7 @@
-"""Position page generation — the page type unique to debate wikis."""
+"""Position page generation — plan/finalize split.
+
+A position page is one person's stance on one concept. Unique to debate wikis.
+"""
 from __future__ import annotations
 from datetime import date
 from signal_brain.wiki.schemas import render_page, validate_page
@@ -40,18 +43,21 @@ What the counterpart said back (for counter-arguments section):
 Write the page body."""
 
 
-def generate_position_page(*, holder: str, concept: str, stance: str,
+PAGE_RESPONSE_SCHEMA = {"required": ["body"], "types": {"body": "str"}}
+
+
+def build_position_prompts(*, holder: str, concept: str, stance: str,
                            confidence: str, first_seen: str, last_seen: str,
                            evolution: str, sources_count: int,
-                           bursts_summary: str, counterpart_summary: str,
-                           llm) -> str:
+                           bursts_summary: str, counterpart_summary: str
+                           ) -> tuple[str, str, dict, dict]:
+    """Return (system_prompt, user_prompt, response_schema, planned_frontmatter)."""
     user = POSITION_USER.format(
         holder=holder, concept=concept, stance=stance, confidence=confidence,
         first_seen=first_seen, last_seen=last_seen, evolution=evolution,
         sources_count=sources_count, bursts_summary=bursts_summary,
         counterpart_summary=counterpart_summary,
     )
-    body = llm.complete(POSITION_SYSTEM, user, max_tokens=3500).text.strip()
     fm = {
         "type": "position",
         "holder": holder,
@@ -64,5 +70,9 @@ def generate_position_page(*, holder: str, concept: str, stance: str,
         "sources_count": sources_count,
         "last_touched": date.today().isoformat(),
     }
-    validate_page("position", fm, body)
-    return render_page(fm, body)
+    return POSITION_SYSTEM, user, PAGE_RESPONSE_SCHEMA, fm
+
+
+def render_position_page(planned_fm: dict, body: str) -> str:
+    validate_page("position", planned_fm, body)
+    return render_page(planned_fm, body)

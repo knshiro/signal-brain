@@ -1,14 +1,24 @@
-"""Wiki page build orchestration: decide what pages to create, summarize bursts, generate."""
+"""Wiki page build orchestration — plan/finalize.
+
+`plan_pages` decides which pages exist (deterministic, unchanged). `build_wiki_plan`
+walks the plan and emits one synthesis todo row per page via the worklist module.
+`build_wiki_finalize` reads the done file, validates each body against the page
+schema, and writes the .md file. Schema failures land in `synthesis.failed.jsonl`
+without aborting the rest of the build.
+"""
 from __future__ import annotations
 import json
 from collections import defaultdict
 from pathlib import Path
+
 from signal_brain.sources import slugify
-from signal_brain.wiki.people import generate_person_page
-from signal_brain.wiki.concepts import generate_concept_page
-from signal_brain.wiki.positions import generate_position_page
-from signal_brain.wiki.arcs import generate_arc_page
-from signal_brain.wiki.cross import generate_cross_page
+from signal_brain.wiki.schemas import SchemaError
+from signal_brain.wiki.people import build_person_prompts, render_person_page
+from signal_brain.wiki.concepts import build_concept_prompts, render_concept_page
+from signal_brain.wiki.positions import build_position_prompts, render_position_page
+from signal_brain.wiki.arcs import build_arc_prompts, render_arc_page
+from signal_brain.wiki.cross import build_cross_prompts, render_cross_page
+from signal_brain.worklist import emit, load_done, load_todo
 
 
 def _sender_to_identity(sender: str, me: dict) -> tuple[str, str, str]:
@@ -29,7 +39,7 @@ def plan_pages(bursts: list[dict], chunks: list[dict], arcs: list[dict],
     topic_counts: dict[str, int] = defaultdict(int)
     topic_bursts: dict[str, list[str]] = defaultdict(list)
     person_bursts: dict[str, list[str]] = defaultdict(list)
-    person_meta: dict[str, dict] = {}  # slug -> {name, relation}
+    person_meta: dict[str, dict] = {}
     person_topic_bursts: dict[tuple[str, str], list[str]] = defaultdict(list)
     for b in bursts:
         c = chunk_by_burst.get(b["id"])
@@ -81,67 +91,164 @@ def _summarize_bursts_for(burst_ids: list[str], chunks_by_id: dict[str, dict]) -
     )
 
 
-def build_wiki(*, data_dir: Path, wiki_dir: Path, llm, me: dict,
-               min_concept_bursts: int = 5) -> dict:
+_CROSS_SEEDS = [
+    ("agreements", "Agreements"),
+    ("disagreements", "Disagreements"),
+    ("rhetorical-patterns", "Rhetorical patterns"),
+    ("empirical-pool", "Empirical pool"),
+]
+
+
+def _load_jsonl(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def build_wiki_plan(*, data_dir: Path, wiki_dir: Path, me: dict,
+                    todo_path: Path, min_concept_bursts: int = 5) -> dict:
+    """Plan phase: emit one synthesis todo per page that should exist. No LLM."""
     data_dir = Path(data_dir)
     wiki_dir = Path(wiki_dir)
+    todo_path = Path(todo_path)
     for sub in ["people", "concepts", "positions", "arcs", "cross"]:
         (wiki_dir / sub).mkdir(parents=True, exist_ok=True)
-    bursts = [json.loads(l) for l in (data_dir / "bursts.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
-    chunks = [json.loads(l) for l in (data_dir / "chunks.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
-    arcs = [json.loads(l) for l in (data_dir / "arcs.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()] \
-        if (data_dir / "arcs.jsonl").exists() else []
+
+    bursts = _load_jsonl(data_dir / "bursts.jsonl")
+    chunks = _load_jsonl(data_dir / "chunks.jsonl")
+    arcs = _load_jsonl(data_dir / "arcs.jsonl")
     chunks_by_id = {c["burst_id"]: c for c in chunks}
 
     plan = plan_pages(bursts, chunks, arcs, min_concept_bursts=min_concept_bursts, me=me)
-    written: dict[str, str] = {}
+    planned = 0
 
     for key, spec in plan["pages"].items():
         sub, name = key.split("/", 1)
         summary = _summarize_bursts_for(spec.get("bursts", []), chunks_by_id)
-        path = wiki_dir / sub / f"{name}.md"
+        out_path = wiki_dir / sub / f"{name}.md"
         if sub == "people":
-            page = generate_person_page(
+            system, user, schema, fm = build_person_prompts(
                 slug=spec["slug"], name=spec["name"], relation=spec["relation"],
-                bursts_summary=summary, sources_count=len(spec["bursts"]), llm=llm,
+                bursts_summary=summary, sources_count=len(spec["bursts"]),
             )
+            page_type, kind = "person", "page-person"
         elif sub == "concepts":
-            page = generate_concept_page(
+            system, user, schema, fm = build_concept_prompts(
                 slug=spec["slug"], aliases=[], contested=True,
-                sources_count=len(spec["bursts"]), bursts_summary=summary, llm=llm,
+                sources_count=len(spec["bursts"]), bursts_summary=summary,
             )
+            page_type, kind = "concept", "page-concept"
         elif sub == "positions":
-            counterpart_summary = summary
-            page = generate_position_page(
+            system, user, schema, fm = build_position_prompts(
                 holder=spec["holder"], concept=spec["concept"],
                 stance="(see Core claim)", confidence="medium",
                 first_seen=f"[{spec['bursts'][0]}#m1]",
                 last_seen=f"[{spec['bursts'][-1]}#m1]",
                 evolution="stable", sources_count=len(spec["bursts"]),
-                bursts_summary=summary, counterpart_summary=counterpart_summary, llm=llm,
+                bursts_summary=summary, counterpart_summary=summary,
             )
+            page_type, kind = "position", "page-position"
         elif sub == "arcs":
-            page = generate_arc_page(
+            system, user, schema, fm = build_arc_prompts(
                 arc_id=spec["arc_id"], slug=spec["slug"],
                 period=spec["period"], bursts=spec["bursts"],
-                primary_topic=spec["primary_topic"], bursts_summary=summary, llm=llm,
+                primary_topic=spec["primary_topic"], bursts_summary=summary,
                 status=spec["status"],
             )
+            page_type, kind = "arc", "page-arc"
         else:
             continue
-        path.write_text(page, encoding="utf-8")
-        written[key] = str(path)
+        emit(
+            todo_path,
+            stage="synthesis", kind=kind,
+            system=system, user=user, response_schema=schema,
+            context={"page_type": page_type,
+                     "out_path": str(out_path), "frontmatter": fm},
+        )
+        planned += 1
 
-    # Seed cross pages
-    for slug, title in [("agreements", "Agreements"), ("disagreements", "Disagreements"),
-                        ("rhetorical-patterns", "Rhetorical patterns"),
-                        ("empirical-pool", "Empirical pool")]:
-        path = wiki_dir / "cross" / f"{slug}.md"
-        if not path.exists():
-            instances = "\n".join(f"- {c['burst_id']}: {c['summary']}" for c in chunks[:20])
-            page = generate_cross_page(slug=slug, title=title,
-                                       instances_summary=instances, llm=llm)
-            path.write_text(page, encoding="utf-8")
-            written[f"cross/{slug}"] = str(path)
+    cross_instances = "\n".join(f"- {c['burst_id']}: {c['summary']}" for c in chunks[:20])
+    for slug, title in _CROSS_SEEDS:
+        out_path = wiki_dir / "cross" / f"{slug}.md"
+        if out_path.exists():
+            continue
+        system, user, schema, fm = build_cross_prompts(
+            slug=slug, title=title, instances_summary=cross_instances,
+        )
+        emit(
+            todo_path,
+            stage="synthesis", kind="page-cross",
+            system=system, user=user, response_schema=schema,
+            context={"page_type": "cross", "out_path": str(out_path), "frontmatter": fm},
+        )
+        planned += 1
 
-    return {"pages_written": len(written), "paths": written}
+    return {"pages_planned": planned}
+
+
+_RENDERERS = {
+    "person": render_person_page,
+    "concept": render_concept_page,
+    "position": render_position_page,
+    "arc": render_arc_page,
+    "cross": render_cross_page,
+}
+
+
+def build_wiki_finalize(*, data_dir: Path, wiki_dir: Path,
+                        todo_path: Path, done_path: Path) -> dict:
+    """Finalize phase: read done.jsonl, validate, write .md files. No LLM."""
+    data_dir = Path(data_dir)
+    wiki_dir = Path(wiki_dir)
+    todo_path = Path(todo_path)
+    done_path = Path(done_path)
+
+    todos_by_job = {row["job_id"]: row for row in load_todo(todo_path)}
+    done_by_job = load_done(done_path)
+    failed_path = data_dir / "synthesis.failed.jsonl"
+
+    pages_written = 0
+    failed = 0
+    missing: list[str] = []
+
+    for job_id, todo in todos_by_job.items():
+        done = done_by_job.get(job_id)
+        if done is None:
+            missing.append(job_id)
+            continue
+        ctx = todo.get("context", {})
+        page_type = ctx.get("page_type")
+        fm = ctx.get("frontmatter", {})
+        out_path = Path(ctx.get("out_path", ""))
+        body = done.get("response", {}).get("body", "")
+        renderer = _RENDERERS.get(page_type)
+        if renderer is None:
+            failed += 1
+            failed_path.parent.mkdir(parents=True, exist_ok=True)
+            with failed_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "job_id": job_id, "page_type": page_type,
+                    "error": f"unknown page_type: {page_type!r}",
+                    "body_snippet": body[:200],
+                }, ensure_ascii=False) + "\n")
+            continue
+        try:
+            rendered = renderer(fm, body)
+        except SchemaError as e:
+            failed += 1
+            failed_path.parent.mkdir(parents=True, exist_ok=True)
+            with failed_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "job_id": job_id, "page_type": page_type,
+                    "error": str(e), "body_snippet": body[:200],
+                }, ensure_ascii=False) + "\n")
+            continue
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(rendered, encoding="utf-8")
+        pages_written += 1
+
+    return {"pages_written": pages_written, "failed": failed, "missing": missing}
