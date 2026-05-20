@@ -86,6 +86,7 @@ Tests should always be green. If you change a public function signature, update 
 These are non-negotiable. Past review cycles enforced them; future code must follow.
 
 - **UTF-8 explicit on every file I/O.** All `Path.read_text(...)` and `Path.write_text(...)` calls include `encoding="utf-8"`. The codebase has UTF-8 sender labels (`SébastienBéal`) and French source content; default encoding is unreliable across platforms.
+- **Operator-identity scrubbing.** `config.toml [me].real_names` is a per-developer list of plain-string patterns (e.g., `["Ugo", "Ugo Bataillard"]`) that are scrubbed from message bodies and quoted text during ingest, replaced with `[me].name` (or its first token, for single-token patterns). Word-boundary anchored, case-insensitive, case-preserved. The committed default is `[]`; populate it locally and don't commit your real names. Without it, the other party's references to you by your real name leak into `brain/<src>/` and break the pseudonym.
 - **Python 3.11+ type hints.** Use built-in generics (`list[dict]`, `dict[str, int]`, `str | None`) — no `typing.List`/`Optional`.
 - **Slug rules.** Lowercase ASCII, kebab-case, no diacritics. `slugify("BjörkGuðmundsdóttir") == "bjorkgudmundsdottir"`. See `scripts/signal_brain/sources.py`.
 - **Citation format.** `[Bnnnn#mN]` where `Bnnnn` is a 4-digit zero-padded burst id and `mN` is the 1-indexed position of the message inside that burst's `msg_ids`. Always cite; lint catches unresolved citations.
