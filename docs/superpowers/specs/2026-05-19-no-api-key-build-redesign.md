@@ -6,7 +6,7 @@
 
 ## Goal
 
-Build a SébastienBéal-class brain end-to-end from inside a Claude Code session, with no `ANTHROPIC_API_KEY` and no outbound Anthropic SDK calls. The user runs one entry point (`signal-brain:build` skill, or one CLI invocation that delegates to the agent) and walks away with a fully built brain: msg_index, bursts, chunks, arcs, wiki pages, deterministic + lateral links, lint report.
+Build a Amélie-class brain end-to-end from inside a Claude Code session, with no `ANTHROPIC_API_KEY` and no outbound Anthropic SDK calls. The user runs one entry point (`signal-brain:build` skill, or one CLI invocation that delegates to the agent) and walks away with a fully built brain: msg_index, bursts, chunks, arcs, wiki pages, deterministic + lateral links, lint report.
 
 Non-goal: removing Python. Python keeps doing deterministic work; only LLM calls move into the agent.
 
@@ -260,7 +260,7 @@ Four task-sized chunks, each independently shippable:
 1. **Worklist module + Python refactor of `tagging.py`.** Add `worklist.py`. Refactor `tag_bursts` to call `worklist.emit` instead of `llm.complete_json`. Add `ingest --plan` and `ingest --finalize` to CLI. Tests: feed a fake done.jsonl into finalize, verify chunks.jsonl identical to today's output for the mini fixture.
 2. **Refactor wiki page generators.** Same pattern, one generator at a time (person → concept → position → arc → cross). Each generator's prompt builder stays the same; the function returns `(system, user, schema)` instead of calling the LLM. `build_wiki` emits todos and finalizes from done.jsonl.
 3. **Refactor `linking.run_stage2` and `evaluators.evaluate_bursts`.** Same pattern.
-4. **Ship the orchestrator skill.** Write `signal-brain:build` skill. Manual end-to-end test on the mini fixture, then on SébastienBéal.
+4. **Ship the orchestrator skill.** Write `signal-brain:build` skill. Manual end-to-end test on the mini fixture, then on Amélie.
 
 Until step 4 ships, the system is **unusable** end-to-end without a wrapper. Steps 1-3 land behind `--plan`/`--finalize` flags, with no legacy `ingest`-as-one-shot path. Acceptable because the user is the only consumer and is driving this redesign.
 
@@ -387,7 +387,7 @@ This keeps the skill source single-canonical. Tool translation is the runtime's 
 
 ## Acceptance criteria
 
-- [ ] `ANTHROPIC_API_KEY` is unset in env. Running `signal-brain:build` skill on SébastienBéal produces a full brain: `data/{msg_index,bursts,chunks,arcs}.jsonl`, all wiki subdirectories populated, `index.md` non-empty, `log.md` updated, `lint-report.md` present.
+- [ ] `ANTHROPIC_API_KEY` is unset in env. Running `signal-brain:build` skill on Amélie produces a full brain: `data/{msg_index,bursts,chunks,arcs}.jsonl`, all wiki subdirectories populated, `index.md` non-empty, `log.md` updated, `lint-report.md` present.
 - [ ] Re-running the skill on the same source with no changes finishes in <30 seconds (all cached; no subagent dispatches).
 - [ ] Re-running after a content change in the source re-tags only the affected bursts and re-synthesizes only the affected pages.
 - [ ] `pip install -e .` works without `anthropic` in runtime deps.

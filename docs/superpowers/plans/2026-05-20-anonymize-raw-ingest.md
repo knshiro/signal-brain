@@ -539,17 +539,17 @@ real_names = ["Ugo", "Ugo Bataillard"]
 - [ ] **Step 2: Clean previous state**
 
 ```bash
-rm -rf brain/SébastienBéal/
+rm -rf brain/Amélie/
 ```
 
 - [ ] **Step 3: Run the orchestrator skill end-to-end**
 
-From inside Claude Code, invoke the `signal-brain-build` skill on the SébastienBéal source. Let it run all 14 steps.
+From inside Claude Code, invoke the `signal-brain-build` skill on the Amélie source. Let it run all 14 steps.
 
 - [ ] **Step 4: Verify acceptance criterion 1 — real name absent**
 
 ```bash
-grep -ri "ugo" brain/SébastienBéal/ | grep -v "^Binary file" | wc -l
+grep -ri "ugo" brain/Amélie/ | grep -v "^Binary file" | wc -l
 ```
 
 Expected: `0`.
@@ -559,7 +559,7 @@ If non-zero, inspect the matches. They should NOT include any from message body 
 - [ ] **Step 5: Verify acceptance criterion 2 — pseudonym still greppable**
 
 ```bash
-grep -ri "thomas" brain/SébastienBéal/ | wc -l
+grep -ri "thomas" brain/Amélie/ | wc -l
 ```
 
 Expected: non-zero (sender label, slug, and any replaced text contribute hits).
@@ -569,7 +569,7 @@ Expected: non-zero (sender label, slug, and any replaced text contribute hits).
 Grep for any text that contains "thomas" with a leading or trailing letter that would indicate a corrupted boundary match (e.g., `Hthomas`):
 
 ```bash
-grep -riE "[A-Za-z]thomas|thomas[A-Za-z]" brain/SébastienBéal/ | wc -l
+grep -riE "[A-Za-z]thomas|thomas[A-Za-z]" brain/Amélie/ | wc -l
 ```
 
 Expected: `0`.
@@ -577,10 +577,10 @@ Expected: `0`.
 - [ ] **Step 7: Verify acceptance criterion 5 — hash stability across runs**
 
 ```bash
-cp brain/SébastienBéal/data/manifest.json /tmp/manifest-before.json
-signal-brain ingest --plan --source SébastienBéal
-signal-brain ingest --finalize --source SébastienBéal
-diff /tmp/manifest-before.json brain/SébastienBéal/data/manifest.json
+cp brain/Amélie/data/manifest.json /tmp/manifest-before.json
+signal-brain ingest --plan --source Amélie
+signal-brain ingest --finalize --source Amélie
+diff /tmp/manifest-before.json brain/Amélie/data/manifest.json
 ```
 
 Expected: no diff (or only timestamp-trivial diff). The content_hashes dict must be identical.
@@ -603,8 +603,8 @@ Spec: `docs/superpowers/specs/2026-05-20-anonymize-raw-ingest.md`
 ## Test plan
 
 - [ ] `pytest -q` is green.
-- [ ] Smoke test on SébastienBéal export: `grep -ri "ugo" brain/SébastienBéal/` returns 0 hits.
-- [ ] `grep -ri "thomas" brain/SébastienBéal/` still returns hits.
+- [ ] Smoke test on Amélie export: `grep -ri "ugo" brain/Amélie/` returns 0 hits.
+- [ ] `grep -ri "thomas" brain/Amélie/` still returns hits.
 - [ ] No corrupted-boundary matches (e.g., `Hthomas`).
 - [ ] Two consecutive `ingest --plan` runs produce identical `manifest.json` content_hashes.
 

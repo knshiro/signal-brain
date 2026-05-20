@@ -263,7 +263,7 @@ name: signal-brain-build
 description: >
   Build a Signal conversation brain end-to-end (ingest → wiki → links → lint)
   without an Anthropic API key. Use when the user says "build the brain",
-  "run signal-brain", "regenerate the SébastienBéal brain", or invokes this
+  "run signal-brain", "regenerate the Amélie brain", or invokes this
   skill directly. Drives the local Python pipeline through plan/finalize
   phases and dispatches subagents to do the LLM-shaped work.
 user-invocable: true
@@ -345,7 +345,7 @@ After B, C are done and `llm.py` is no longer imported anywhere:
 ## Task F — Full test pass + smoke
 
 - `pytest -q` — all tests green.
-- Manual smoke: with `ANTHROPIC_API_KEY` unset, run `signal-brain ingest --plan --source SébastienBéal`. Inspect `brain/SébastienBéal/data/tagging.todo.jsonl` — should have ~25 rows (one per burst). Hand-write a few fake done rows. Run `signal-brain ingest --finalize` — should produce a partial `chunks.jsonl`. Restore and let the orchestrator skill take over only if the user wants to test the full path.
+- Manual smoke: with `ANTHROPIC_API_KEY` unset, run `signal-brain ingest --plan --source Amélie`. Inspect `brain/Amélie/data/tagging.todo.jsonl` — should have ~25 rows (one per burst). Hand-write a few fake done rows. Run `signal-brain ingest --finalize` — should produce a partial `chunks.jsonl`. Restore and let the orchestrator skill take over only if the user wants to test the full path.
 - Document any items deferred to `KNOWN_ISSUES.md` (e.g., if Codex side can't be tested from here without switching runtime).
 
 ---

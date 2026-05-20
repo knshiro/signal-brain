@@ -60,8 +60,8 @@ Applying the scrub once at the top of the pipeline is the only place that matter
 
 ## Acceptance criteria
 
-1. **Real name absent from `brain/<src>/`.** After a fresh ingest on the SébastienBéal export with `real_names = ["Ugo", "Ugo Bataillard"]` configured, `grep -ri "ugo" brain/SébastienBéal/` returns no matches (case-insensitive). The other party uses the real name in at least a few messages today, so this is a real signal.
-2. **Pseudonym still greppable.** `grep -ri "thomas" brain/SébastienBéal/` continues to return matches (via the sender label, slug, and any new replacements).
+1. **Real name absent from `brain/<src>/`.** After a fresh ingest on the Amélie export with `real_names = ["Ugo", "Ugo Bataillard"]` configured, `grep -ri "ugo" brain/Amélie/` returns no matches (case-insensitive). The other party uses the real name in at least a few messages today, so this is a real signal.
+2. **Pseudonym still greppable.** `grep -ri "thomas" brain/Amélie/` continues to return matches (via the sender label, slug, and any new replacements).
 3. **Word-boundary correctness.** A burst containing the word "Hugo" (or similar substring) is not corrupted into "Hthomas".
 4. **Defaults are inert.** With `real_names = []` (or absent), `build_msg_index` output is byte-identical to the current behaviour; all existing tests pass without modification.
 5. **Hash stability.** Two consecutive runs with the same scrubber config produce identical burst content hashes (no spurious cache misses after the initial cut-over).

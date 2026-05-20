@@ -51,9 +51,9 @@ def test_emit_is_idempotent_by_job_id(tmp_path):
 def test_emit_preserves_unicode_round_trip(tmp_path):
     todo = tmp_path / "todo.jsonl"
     emit(todo, stage="tagging", kind="burst", system="Élu",
-         user="SébastienBéal: hi", response_schema={}, context={})
+         user="Amélie: hi", response_schema={}, context={})
     raw = todo.read_text(encoding="utf-8")
-    assert "SébastienBéal" in raw
+    assert "Amélie" in raw
     assert "Élu" in raw
 
 

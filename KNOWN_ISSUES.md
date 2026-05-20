@@ -31,7 +31,7 @@ These items surfaced during code-quality reviews and the final whole-implementat
 ## Anonymization-related (added 2026-05-20 in feat/anonymize-ingest)
 
 21. **`diff_messages` compares unscrubbed source to scrubbed index.** When the operator-identity scrubber is configured, the second-and-later run of `ingest --plan` reports messages that contained the real name as `modified` (because the freshly-loaded source body has "Ugo" but the on-disk msg_index body has "Thomas"). Manifest content_hashes are stable and downstream caches still hit, so this is cosmetic only. Fix: apply the scrubber to source bodies inside `diff_messages` before comparing.
-22. **`attachments` field is not scrubbed.** Attachments are file references whose `fileName` could theoretically contain the real name. Empty for the SébastienBéal export so no leak observed in practice. Extend the scrubber if a future export needs it.
+22. **`attachments` field is not scrubbed.** Attachments are file references whose `fileName` could theoretically contain the real name. Empty for the Amélie export so no leak observed in practice. Extend the scrubber if a future export needs it.
 
 ## Carry-forward but cosmetic
 

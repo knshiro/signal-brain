@@ -6,13 +6,13 @@
 
 Per-burst tagging without a shared vocabulary produces N unique slugs from N bursts. Each burst's tagger sees only its own messages and coins fresh slugs ("billionaires", "wealth-concentration", "wealth-accumulation", "rich-people", "capital", "ultra-rich"…) for what is semantically the same theme. The downstream concept/position/arc layer requires `min_concept_bursts` bursts to share a slug before a concept page fires; on small conversations (~150 bursts), no slug ever clears that bar, and the wiki ends up empty of the very concept and position pages the design promised.
 
-The PR #1 smoke test confirmed this empirically on the SébastienBéal export: zero `concepts/` pages, zero `positions/` pages, despite the conversation clearly containing recurring themes.
+The PR #1 smoke test confirmed this empirically on the Amélie export: zero `concepts/` pages, zero `positions/` pages, despite the conversation clearly containing recurring themes.
 
 ## Goal
 
 Add a new stage upstream of per-burst tagging that produces a *canonical vocabulary* — a small, conversation-specific list of slugs — and then forces per-burst tagging to draw from that vocabulary. This matches how a human curator would do it: skim the whole conversation, identify the themes, then tag burst-by-burst with the slug list in hand.
 
-After this PR, on the SébastienBéal export:
+After this PR, on the Amélie export:
 - ≥1 `concepts/` page on a wealth-concentration-themed slug.
 - ≥1 `positions/thomas-martin--*.md` page.
 - The original failing query ("Thomas' position on accumulation of capital…") cites a position page, not just bursts.
@@ -136,11 +136,11 @@ New lint check: `out_of_taxonomy_rate`. Reports the fraction of chunks where `ou
 
 ## Acceptance criteria
 
-On a fresh end-to-end run on the SébastienBéal export with the orchestrator skill:
+On a fresh end-to-end run on the Amélie export with the orchestrator skill:
 
-1. **`brain/SébastienBéal/data/taxonomy.json` exists** and contains a non-empty `taxonomy` list (expected size ~10–18) and a non-empty `concepts` subset.
+1. **`brain/Amélie/data/taxonomy.json` exists** and contains a non-empty `taxonomy` list (expected size ~10–18) and a non-empty `concepts` subset.
 2. **All non-out-of-taxonomy `chunks.jsonl` rows have `topics ⊆ taxonomy`.** Spot-check by inspecting a few rows.
-3. **At least one concept page exists** on a wealth-themed slug under `brain/SébastienBéal/concepts/` — e.g. `concepts/wealth-and-inequality.md`. The taxonomy must produce a single un-fragmented wealth topic and mark it a concept.
+3. **At least one concept page exists** on a wealth-themed slug under `brain/Amélie/concepts/` — e.g. `concepts/wealth-and-inequality.md`. The taxonomy must produce a single un-fragmented wealth topic and mark it a concept.
 4. **At least one `positions/thomas-martin--*.md` page exists.**
 5. **The query that motivated this work** — "What is Thomas' position on accumulation of capital and inequality?" — now resolves to a position page, not just a list of bursts.
 6. **Idempotence.** Re-running `signal-brain ingest --plan` immediately after a successful finalize is a no-op (taxonomy cache hit, no new tagging todos).
@@ -152,5 +152,5 @@ Ships **after** `anonymize-raw-ingest`. Reason: taxonomy slugs derived from scru
 ## Open questions deferred to follow-ups
 
 - **Taxonomy prompt tuning per conversation.** Today's `[tagging]` section has `description` and `seed_tags` — these flow into both the taxonomy and tagging prompts unchanged. If we find taxonomies are systematically too broad or too narrow, we'll introduce `[taxonomy]` knobs separately.
-- **Multi-language taxonomies.** Current SébastienBéal export is mostly French; the tagger outputs English slugs. We assume the taxonomy stage handles that fine. Verify in the smoke test.
+- **Multi-language taxonomies.** Current Amélie export is mostly French; the tagger outputs English slugs. We assume the taxonomy stage handles that fine. Verify in the smoke test.
 - **Taxonomy size cap.** Don't enforce one initially. Add only if we see runaway lists.

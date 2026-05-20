@@ -1273,19 +1273,19 @@ git commit -m "feat(lint): out_of_taxonomy rate report + over-25% warning"
 
 ---
 
-## Task 8: Smoke-test acceptance on SébastienBéal
+## Task 8: Smoke-test acceptance on Amélie
 
 **Files:** none modified — verification only.
 
 - [ ] **Step 1: Clean previous state**
 
 ```bash
-rm -rf brain/SébastienBéal/
+rm -rf brain/Amélie/
 ```
 
 - [ ] **Step 2: Run the orchestrator end-to-end**
 
-From inside Claude Code, invoke the `signal-brain-build` skill on the SébastienBéal source. The skill should:
+From inside Claude Code, invoke the `signal-brain-build` skill on the Amélie source. The skill should:
 
 1. First `ingest --plan` returns `taxonomy_pending=true` with one todo.
 2. Fan out one subagent → write taxonomy.done.
@@ -1299,7 +1299,7 @@ Confirm the loop converges (the skill should not require user nudging between it
 - [ ] **Step 3: Verify `taxonomy.json` shape**
 
 ```bash
-cat brain/SébastienBéal/data/taxonomy.json
+cat brain/Amélie/data/taxonomy.json
 ```
 
 Expected: a JSON object with `source_hash`, `taxonomy` (10–25 slugs), `notes`. Eyeball the slugs — they should look like coherent themes, not generic single-word noise.
@@ -1310,8 +1310,8 @@ Expected: a JSON object with `source_hash`, `taxonomy` (10–25 slugs), `notes`.
 python3 - <<'EOF'
 import json
 from pathlib import Path
-tax = set(json.loads(Path("brain/SébastienBéal/data/taxonomy.json").read_text())["taxonomy"])
-rows = [json.loads(l) for l in Path("brain/SébastienBéal/data/chunks.jsonl").read_text().splitlines() if l.strip()]
+tax = set(json.loads(Path("brain/Amélie/data/taxonomy.json").read_text())["taxonomy"])
+rows = [json.loads(l) for l in Path("brain/Amélie/data/chunks.jsonl").read_text().splitlines() if l.strip()]
 in_tax = 0; out_tax = 0
 for r in rows:
     if r.get("out_of_taxonomy"): out_tax += 1
@@ -1327,8 +1327,8 @@ Expected: no assertion fires; `out_of_taxonomy` rate is well under 25%.
 - [ ] **Step 5: Verify acceptance criteria 3, 4, 5**
 
 ```bash
-ls brain/SébastienBéal/concepts/
-ls brain/SébastienBéal/positions/ | grep "thomas-martin"
+ls brain/Amélie/concepts/
+ls brain/Amélie/positions/ | grep "thomas-martin"
 ```
 
 Expected:
@@ -1337,14 +1337,14 @@ Expected:
 
 Then ask an agent (or check manually):
 
-> Read `brain/SébastienBéal/AGENTS.md` and answer: what is Thomas Martin's position on accumulation of capital and inequality?
+> Read `brain/Amélie/AGENTS.md` and answer: what is Thomas Martin's position on accumulation of capital and inequality?
 
 Expected: the answer cites a position page (`positions/thomas-martin--*.md`), not just bursts.
 
 - [ ] **Step 6: Verify idempotence**
 
 ```bash
-signal-brain ingest --plan --source SébastienBéal
+signal-brain ingest --plan --source Amélie
 ```
 
 Expected: `taxonomy_pending: false`, `tagging_todos: 0`. No new work.
@@ -1371,12 +1371,12 @@ Spec: `docs/superpowers/specs/2026-05-20-taxonomy-first.md`
 ## Test plan
 
 - [ ] `pytest -q` is green.
-- [ ] SébastienBéal smoke: `brain/SébastienBéal/data/taxonomy.json` has 10–25 coherent slugs.
+- [ ] Amélie smoke: `brain/Amélie/data/taxonomy.json` has 10–25 coherent slugs.
 - [ ] ≥1 concept page on a wealth-concentration-themed slug.
 - [ ] ≥1 `positions/thomas-martin--*.md` page.
 - [ ] The motivating query ("Thomas' position on accumulation of capital…") cites a position page.
 - [ ] Idempotent: re-running `ingest --plan` after finalize is a no-op.
-- [ ] `out_of_taxonomy` rate < 25% on SébastienBéal.
+- [ ] `out_of_taxonomy` rate < 25% on Amélie.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 EOF
@@ -1440,4 +1440,4 @@ The Task 8 smoke test revealed the flat 24-slug taxonomy fragments themes (wealt
 
 ### Task 11: Smoke test + PR (supersedes original Task 8)
 
-End-to-end run on the SébastienBéal export: taxonomy fan-out with the new prompt, tagging fan-out, finalize, `build-wiki --plan`, lint. Verify all six acceptance criteria — in particular ≥1 wealth-themed concept page and ≥1 `positions/thomas-martin--*.md`. Open the PR.
+End-to-end run on the Amélie export: taxonomy fan-out with the new prompt, tagging fan-out, finalize, `build-wiki --plan`, lint. Verify all six acceptance criteria — in particular ≥1 wealth-themed concept page and ≥1 `positions/thomas-martin--*.md`. Open the PR.

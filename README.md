@@ -53,24 +53,24 @@ Then, from inside Claude Code or Codex, invoke the skill:
 /signal-brain-build
 ```
 
-(or describe what you want — "build the SébastienBéal brain" — and the runtime will pick up the skill from its trigger description). The skill drives the full pipeline end-to-end: ingest → wiki synthesis → links → lint. It dispatches subagents for the LLM-shaped work and does not call any external API.
+(or describe what you want — "build the Amélie brain" — and the runtime will pick up the skill from its trigger description). The skill drives the full pipeline end-to-end: ingest → wiki synthesis → links → lint. It dispatches subagents for the LLM-shaped work and does not call any external API.
 
 If you need to drive the pipeline step-by-step (for debugging, partial rebuilds, or custom orchestration), every stage is also available as a two-phase CLI command:
 
 ```bash
 # Stage with LLM work — two-phase (--plan emits a todo file; agent fills it; --finalize consumes the done file)
-signal-brain ingest --plan        --source SébastienBéal
-signal-brain ingest --finalize    --source SébastienBéal
-signal-brain build-wiki --plan    --source SébastienBéal
-signal-brain build-wiki --finalize --source SébastienBéal
-signal-brain link --stage 2 --plan    --source SébastienBéal
-signal-brain link --stage 2 --finalize --source SébastienBéal
+signal-brain ingest --plan        --source Amélie
+signal-brain ingest --finalize    --source Amélie
+signal-brain build-wiki --plan    --source Amélie
+signal-brain build-wiki --finalize --source Amélie
+signal-brain link --stage 2 --plan    --source Amélie
+signal-brain link --stage 2 --finalize --source Amélie
 
 # Deterministic stages — no agent involvement
-signal-brain build-index --source SébastienBéal
-signal-brain link --stage 1 --source SébastienBéal
-signal-brain lint        --source SébastienBéal
-signal-brain evaluate-bursts --plan --source SébastienBéal --sample-size 20
+signal-brain build-index --source Amélie
+signal-brain link --stage 1 --source Amélie
+signal-brain lint        --source Amélie
+signal-brain evaluate-bursts --plan --source Amélie --sample-size 20
 ```
 
 If `out/` contains exactly one source directory, `--source` may be omitted.

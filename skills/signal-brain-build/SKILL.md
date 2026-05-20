@@ -36,7 +36,7 @@ source .venv/bin/activate
 signal-brain list-sources
 ```
 
-If there's exactly one entry, use it. If multiple, surface the list and ask the user once. After this step, you have `SRC` (the source name, e.g. `SébastienBéal`).
+If there's exactly one entry, use it. If multiple, surface the list and ask the user once. After this step, you have `SRC` (the source name, e.g. `Amélie`).
 
 ### 2. Ingest — plan loop
 
