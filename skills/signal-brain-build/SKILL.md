@@ -68,13 +68,11 @@ stage is not converging, and surface the contents of `data/taxonomy.failed.jsonl
 #### 2a. Taxonomy fan-out
 
 Read `brain/$SRC/data/taxonomy.todo.jsonl`. It contains exactly **one** row.
-Dispatch a single subagent using the same prompt template as tagging (see Step 3).
-Response schema:
-
-```
-required keys: ["taxonomy", "notes"]
-types:         {"taxonomy": "list", "notes": "str"}
-```
+Dispatch a single subagent using the same prompt template as tagging (see Step 3):
+render that template verbatim with the row's `system_prompt`, `user_prompt`, and
+`response_schema` — including `{response_schema.required}` and
+`{response_schema.types}`. Do not hardcode the schema here; the todo row carries
+the correct, current shape, so referencing it can never drift.
 
 The taxonomy prompt embeds the full conversation, so it is a heavier call than a
 per-burst tag — allow it more time. On parse/schema failure, retry once exactly

@@ -1,6 +1,8 @@
 """Wiki page build orchestration — plan/finalize.
 
-`plan_pages` decides which pages exist (deterministic, unchanged). `build_wiki_plan`
+`plan_pages` decides which pages exist (deterministic): concept and position
+pages are selected from the taxonomy `concepts` list, backed by burst coverage.
+`build_wiki_plan`
 walks the plan and emits one synthesis todo row per page via the worklist module.
 `build_wiki_finalize` reads the done file, validates each body against the page
 schema, and writes the .md file. Schema failures land in `synthesis.failed.jsonl`

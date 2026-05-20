@@ -245,7 +245,7 @@ def finalize_tagging(
 
 
 def load_chunks_as_cache(chunks_path: Path, hashes_by_id: dict[str, str]) -> dict[str, dict]:
-    """Read an existing chunks.jsonl into a {burst_id: {hash, topics, primary, summary}} map.
+    """Read an existing chunks.jsonl into a {burst_id: {hash, topics, primary, summary, out_of_taxonomy}} map.
 
     The hash is looked up from the manifest's stored hashes_by_id, since chunks.jsonl
     doesn't carry the hash itself.
