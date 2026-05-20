@@ -28,6 +28,7 @@ from signal_brain.taxonomy import (
     load_taxonomy_cache,
     source_content_hash,
 )
+from signal_brain.worklist import load_done, load_todo
 
 
 def _load_raw(path: Path) -> list[dict]:
@@ -171,7 +172,12 @@ def run_ingest_plan(*, source_path: Path, data_dir: Path,
     manifest.content_hashes = new_hashes
     manifest.save(p["manifest"])
 
-    tagging_todos = sum(1 for _ in p["tagging_todo"].open(encoding="utf-8")) if p["tagging_todo"].exists() else 0
+    # Report work remaining, not file size: tagging.todo.jsonl is append-only,
+    # so a re-run of --plan after a completed --finalize must show 0, not the
+    # full count. Count todo job_ids that have no matching done row.
+    todo_jobs = {r["job_id"] for r in load_todo(p["tagging_todo"])}
+    done_jobs = set(load_done(p["tagging_done"]).keys())
+    tagging_todos = len(todo_jobs - done_jobs)
     return {
         "diff": diff_summary,
         "bursts": len(bursts),
