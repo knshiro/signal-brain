@@ -86,6 +86,11 @@ def ingest(source, phase):
     tagging_cfg = cfg.get("tagging", {})
     if phase == "plan":
         me_cfg = cfg.get("me", {})
+        if me_cfg.get("real_names") and not me_cfg.get("name"):
+            raise click.ClickException(
+                "[me].real_names is set but [me].name is empty. "
+                "Populate [me].name with the pseudonym so scrubbed text has a replacement."
+            )
         stats = run_ingest_plan(
             source_path=source_path,
             data_dir=data_dir,

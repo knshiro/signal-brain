@@ -30,6 +30,13 @@ sender_label = "Me"
 slug = "thomas-martin"
 name = "Thomas Martin"
 
+# Optional: occurrences of these patterns in message bodies and quoted text are
+# scrubbed at ingest and replaced with `name` (multi-token patterns) or the first
+# token of `name` (single-token patterns). Empty list = no scrubbing.
+# Word-boundary anchored, case-insensitive, case-preserved replacement.
+# This list is per-developer — populate it locally; do not commit your real names.
+real_names = []
+
 [tagging]
 # Optional one-sentence context hint about this conversation.
 # Empty = the tagger stays neutral. Example: "two French friends debating politics and economics".
