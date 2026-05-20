@@ -239,6 +239,52 @@ def test_emit_tagging_todos_threads_taxonomy_into_prompt(tmp_path, mocker):
     assert "out_of_taxonomy" in row["system_prompt"]
 
 
+def test_emit_tagging_todos_neutral_schema_does_not_require_out_of_taxonomy(tmp_path, mocker):
+    """Without a taxonomy, the emitted schema must NOT require out_of_taxonomy
+    (the neutral system prompt never explains the field)."""
+    bursts = [{"id": "B0400", "msg_ids": ["a::Me"], "start": "2026-05-05T16:00"}]
+    msgs = [{"msg_id": "a::Me", "sender": "Me", "body": "hi", "date": "2026-05-05T16:00"}]
+    mocker.patch("signal_brain.tagging.burst_content_hash", return_value="sha1:n")
+    todo = tmp_path / "tagging.todo.jsonl"
+    emit_tagging_todos(bursts, msgs, {}, todo)  # no required_taxonomy
+    row = load_todo(todo)[0]
+    assert "out_of_taxonomy" not in row["response_schema"]["required"]
+    assert "out_of_taxonomy" in row["response_schema"]["types"]  # still type-checked
+
+
+def test_emit_tagging_todos_taxonomy_schema_requires_out_of_taxonomy(tmp_path, mocker):
+    """With a taxonomy, the emitted schema DOES require out_of_taxonomy."""
+    bursts = [{"id": "B0401", "msg_ids": ["a::Me"], "start": "2026-05-05T16:00"}]
+    msgs = [{"msg_id": "a::Me", "sender": "Me", "body": "hi", "date": "2026-05-05T16:00"}]
+    mocker.patch("signal_brain.tagging.burst_content_hash", return_value="sha1:n")
+    todo = tmp_path / "tagging.todo.jsonl"
+    emit_tagging_todos(bursts, msgs, {}, todo, required_taxonomy=["wealth"])
+    row = load_todo(todo)[0]
+    assert "out_of_taxonomy" in row["response_schema"]["required"]
+
+
+def test_finalize_tagging_neutral_allows_missing_out_of_taxonomy(tmp_path, mocker):
+    """Without a taxonomy, a done row that omits out_of_taxonomy is still valid
+    and the chunk row defaults out_of_taxonomy to False."""
+    bursts = [{"id": "B0300", "msg_ids": ["a::Me"], "start": "2026-05-05T15:00"}]
+    msgs = [{"msg_id": "a::Me", "sender": "Me", "body": "hi", "date": "2026-05-05T15:00"}]
+    mocker.patch("signal_brain.tagging.burst_content_hash", return_value="sha1:n")
+    todo = tmp_path / "tagging.todo.jsonl"
+    emit_tagging_todos(bursts, msgs, {}, todo)  # no required_taxonomy
+    todo_row = load_todo(todo)[0]
+    done = tmp_path / "tagging.done.jsonl"
+    done.write_text(json.dumps({
+        "job_id": todo_row["job_id"],
+        "response": {"topics": ["x"], "primary": "x", "summary": "y"},  # no out_of_taxonomy
+    }) + "\n", encoding="utf-8")
+    chunks = tmp_path / "chunks.jsonl"
+    stats = finalize_tagging(bursts, {}, todo, done, chunks)
+    assert stats["new"] == 1
+    assert stats["invalid"] == []
+    row = json.loads(chunks.read_text(encoding="utf-8").splitlines()[0])
+    assert row["out_of_taxonomy"] is False
+
+
 def test_finalize_tagging_propagates_out_of_taxonomy_to_chunks(tmp_path, mocker):
     bursts = [{"id": "B0200", "msg_ids": ["a::Me"], "start": "2026-05-05T14:00"}]
     msgs = [{"msg_id": "a::Me", "sender": "Me", "body": "hi",

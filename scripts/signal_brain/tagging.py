@@ -30,6 +30,21 @@ TAGGING_RESPONSE_SCHEMA = {
               "out_of_taxonomy": "bool"},
 }
 
+# Neutral schema: used when no controlled vocabulary is in effect. The neutral
+# system prompt does not explain `out_of_taxonomy`, so it is not required —
+# but it is still type-checked if the subagent emits it anyway.
+TAGGING_RESPONSE_SCHEMA_NEUTRAL = {
+    "required": ["topics", "primary", "summary"],
+    "types": {"topics": "list", "primary": "str", "summary": "str",
+              "out_of_taxonomy": "bool"},
+}
+
+
+def _tagging_response_schema(required_taxonomy: list[str] | None) -> dict:
+    """Pick the response schema. `out_of_taxonomy` is required only when a
+    controlled vocabulary is in effect (the prompt only explains it then)."""
+    return TAGGING_RESPONSE_SCHEMA if required_taxonomy else TAGGING_RESPONSE_SCHEMA_NEUTRAL
+
 
 def build_system_prompt(
     description: str = "",
@@ -154,7 +169,7 @@ def emit_tagging_todos(
             kind="burst",
             system=system_prompt,
             user=user,
-            response_schema=TAGGING_RESPONSE_SCHEMA,
+            response_schema=_tagging_response_schema(required_taxonomy),
             context={"burst_id": b["id"], "content_hash": h},
         )
     return new_hashes
