@@ -29,16 +29,18 @@ After this PR, on the SébastienBéal export:
 
 Introduce a new stage `taxonomy` upstream of `tagging`. It uses the same plan/finalize contract as every other LLM-shaped stage (one todo row in → one done row out, idempotent by `job_id`).
 
-**Cardinality:** one todo per ingest run. The taxonomy is a global property of the source, not per-burst. Input is the full conversation flattened to plain text; output is a list of slugs plus a freeform `notes` string.
+**Cardinality:** one todo per ingest run. The taxonomy is a global property of the source, not per-burst. Input is the full conversation flattened to plain text; output is two slug lists plus a freeform `notes` string.
 
 ```python
 TAXONOMY_RESPONSE_SCHEMA = {
-    "required": ["taxonomy", "notes"],
-    "types": {"taxonomy": "list", "notes": "str"},
+    "required": ["taxonomy", "concepts", "notes"],
+    "types": {"taxonomy": "list", "concepts": "list", "notes": "str"},
 }
 ```
 
-Typical taxonomy size: 10–25 slugs. The LLM picks the size; we don't constrain it. Anything beyond ~50 indicates the prompt isn't biting and merits a tuning pass.
+`taxonomy` is the full controlled vocabulary used for per-burst tagging. `concepts` is the subset of `taxonomy` slugs the model judges substantial enough to warrant their own wiki page — themes the two people *develop arguments about*, not incidental logistics or banter. `concepts ⊆ taxonomy`.
+
+**Topic granularity (better topic creation).** The taxonomy system prompt instructs the model to produce *concept-grade* topics: each slug must be broad enough to recur across the conversation, and facets of one theme must be merged into a single umbrella slug rather than fragmented into siblings (e.g. wealth concentration, billionaires, and wealth taxation are facets of ONE topic, not three). Target ~10–18 topics; past ~20 the model is fragmenting.
 
 ### Cache key: source content hash
 
@@ -47,10 +49,13 @@ The taxonomy is cached at `brain/<src>/data/taxonomy.json`:
 ```json
 {
   "source_hash": "sha1:abc123…",
-  "taxonomy": ["wealth-concentration", "media-criticism", "geopolitics", ...],
-  "notes": "Themes recur across the timeline; wealth-concentration is the most frequent…"
+  "taxonomy": ["wealth-and-inequality", "role-of-the-state", "comparative-economic-models", ...],
+  "concepts": ["wealth-and-inequality", "role-of-the-state", ...],
+  "notes": "Themes recur across the timeline; wealth-and-inequality is the spine of the debate…"
 }
 ```
+
+`load_taxonomy_cache` returns the full validated dict (or `None`); callers pick the field they need — `run_ingest_plan` reads `taxonomy` for the tagging vocabulary, `build_wiki_plan` reads `concepts` for page selection.
 
 Cache hit when `source_hash` matches the SHA1 of the current msg_index. On hit, no taxonomy todo is emitted; the cached taxonomy is fed directly into the tagging stage. Cache miss = a new ingest run with non-trivially changed source → regenerate.
 
@@ -117,13 +122,25 @@ Two-step convergence: first iteration emits taxonomy todo, second iteration sees
 
 New lint check: `out_of_taxonomy_rate`. Reports the fraction of chunks where `out_of_taxonomy=true`. Above ~25%, surface a warning that the taxonomy is under-fitted to the conversation and suggest re-running ingest after deleting `taxonomy.json`.
 
+### Concept and position page selection
+
+`min_concept_bursts` is removed. Page selection is no longer a burst-count threshold — it is the model's judgment, captured in the `concepts` list.
+
+`wiki/build.py::plan_pages`:
+
+- Counts every topic on a burst (the full `topics` list), not just `primary`. A burst that substantively covers a topic contributes to that topic even when it is not the single dominant one.
+- A **concept page** `concepts/<slug>.md` is planned for each slug in the taxonomy's `concepts` list that is backed by at least one chunk (the ≥1-burst floor guarantees a citable source).
+- A **position page** `positions/<holder>--<slug>.md` is planned for each (holder, concept-slug) pair backed by at least one burst where that holder participated and the slug is in the burst's topics.
+
+`build_wiki_plan` loads `taxonomy.json` to obtain the `concepts` list and passes it to `plan_pages`; the `min_concept_bursts` parameter is dropped from both. When no `taxonomy.json` exists (taxonomy stage never ran), `concepts` is empty and no concept or position pages are planned — a graceful degradation, not an error.
+
 ## Acceptance criteria
 
 On a fresh end-to-end run on the SébastienBéal export with the orchestrator skill:
 
-1. **`brain/SébastienBéal/data/taxonomy.json` exists** and contains a non-empty `taxonomy` list (expected size 10–25).
+1. **`brain/SébastienBéal/data/taxonomy.json` exists** and contains a non-empty `taxonomy` list (expected size ~10–18) and a non-empty `concepts` subset.
 2. **All non-out-of-taxonomy `chunks.jsonl` rows have `topics ⊆ taxonomy`.** Spot-check by inspecting a few rows.
-3. **At least one concept page exists** on a wealth-concentration-themed slug under `brain/SébastienBéal/concepts/`. (The taxonomy must canonicalise; if there's still no concept page, the taxonomy is wrong, not `min_concept_bursts`.)
+3. **At least one concept page exists** on a wealth-themed slug under `brain/SébastienBéal/concepts/` — e.g. `concepts/wealth-and-inequality.md`. The taxonomy must produce a single un-fragmented wealth topic and mark it a concept.
 4. **At least one `positions/thomas-martin--*.md` page exists.**
 5. **The query that motivated this work** — "What is Thomas' position on accumulation of capital and inequality?" — now resolves to a position page, not just a list of bursts.
 6. **Idempotence.** Re-running `signal-brain ingest --plan` immediately after a successful finalize is a no-op (taxonomy cache hit, no new tagging todos).
