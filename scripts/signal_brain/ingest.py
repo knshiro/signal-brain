@@ -22,6 +22,12 @@ from signal_brain.tagging import (
 from signal_brain.arcs import detect_arcs, write_arcs
 from signal_brain.manifest import Manifest
 from signal_brain.anonymize import compile_scrubber
+from signal_brain.taxonomy import (
+    emit_taxonomy_todo,
+    finalize_taxonomy,
+    load_taxonomy_cache,
+    source_content_hash,
+)
 
 
 def _load_raw(path: Path) -> list[dict]:
@@ -66,6 +72,9 @@ def _data_paths(data_dir: Path) -> dict[str, Path]:
         "manifest": data_dir / "manifest.json",
         "tagging_todo": data_dir / "tagging.todo.jsonl",
         "tagging_done": data_dir / "tagging.done.jsonl",
+        "taxonomy_todo": data_dir / "taxonomy.todo.jsonl",
+        "taxonomy_done": data_dir / "taxonomy.done.jsonl",
+        "taxonomy_cache": data_dir / "taxonomy.json",
     }
 
 
@@ -75,9 +84,15 @@ def run_ingest_plan(*, source_path: Path, data_dir: Path,
                     tagging_seed_tags: list[str] | None = None,
                     me_real_names: list[str] | None = None,
                     me_name: str = "") -> dict:
-    """Build msg_index + bursts, emit tagging todos. No LLM, no arcs yet.
+    """Build msg_index + bursts, then either emit a taxonomy todo or tagging todos.
 
-    Idempotent: re-emitting todos for the same burst content is a no-op.
+    Self-progressing: first call (no taxonomy cache) emits only the taxonomy
+    todo and returns `taxonomy_pending=True`. Second call (after the agent has
+    produced taxonomy.done) loads the taxonomy, emits tagging todos with it
+    injected as required vocabulary, returns `taxonomy_pending=False`.
+
+    Idempotent at both layers: re-emitting todos for the same burst content
+    (or the same taxonomy job) is a no-op.
 
     `me_real_names` + `me_name` configure the operator-identity scrubber. When
     `me_real_names` is non-empty, occurrences of those patterns in message
@@ -97,12 +112,49 @@ def run_ingest_plan(*, source_path: Path, data_dir: Path,
     bursts = detect_bursts(msgs, threshold_min=burst_threshold_min)
     write_bursts(bursts, p["bursts"])
 
+    diff_summary = {k: len(v) if isinstance(v, list) else v for k, v in diff.items()}
+
+    # Stage 1: taxonomy.
+    src_hash = source_content_hash(msgs)
+    taxonomy = load_taxonomy_cache(p["taxonomy_cache"], source_hash=src_hash)
+    if taxonomy is None:
+        # Try to finalize from an existing done file (the orchestrator may have
+        # just produced it); otherwise emit the todo and return early.
+        finalized = finalize_taxonomy(
+            p["taxonomy_todo"], p["taxonomy_done"], p["taxonomy_cache"],
+            source_hash=src_hash,
+        )
+        if finalized is not None:
+            taxonomy = finalized["taxonomy"]
+        else:
+            emit_taxonomy_todo(
+                msgs, p["taxonomy_todo"],
+                description=tagging_description, source_hash=src_hash,
+            )
+            todos = sum(1 for _ in p["taxonomy_todo"].open(encoding="utf-8"))
+            return {
+                "diff": diff_summary,
+                "bursts": len(bursts),
+                "taxonomy_pending": True,
+                "taxonomy_todos": todos,
+                "tagging_todos": 0,
+            }
+
+    # Stage 2: tagging with taxonomy in hand.
     manifest = Manifest.load_or_init(p["manifest"], burst_threshold_min=burst_threshold_min)
     cache_by_id = load_chunks_as_cache(p["chunks"], manifest.content_hashes)
 
+    taxonomy_hash = source_content_hash([
+        {"msg_id": "__taxonomy__", "body": json.dumps(taxonomy, sort_keys=True),
+         "reactions": []}
+    ])
+
     new_hashes = emit_tagging_todos(
         bursts, msgs, cache_by_id, p["tagging_todo"],
-        description=tagging_description, seed_tags=tagging_seed_tags,
+        description=tagging_description,
+        seed_tags=tagging_seed_tags,
+        required_taxonomy=taxonomy,
+        taxonomy_hash=taxonomy_hash,
     )
     # Persist hashes early so finalize can still recognize cache hits if the
     # process is interrupted between plan and finalize.
@@ -111,11 +163,13 @@ def run_ingest_plan(*, source_path: Path, data_dir: Path,
     manifest.content_hashes = new_hashes
     manifest.save(p["manifest"])
 
-    todos = sum(1 for _ in p["tagging_todo"].open(encoding="utf-8")) if p["tagging_todo"].exists() else 0
+    tagging_todos = sum(1 for _ in p["tagging_todo"].open(encoding="utf-8")) if p["tagging_todo"].exists() else 0
     return {
-        "diff": {k: len(v) if isinstance(v, list) else v for k, v in diff.items()},
+        "diff": diff_summary,
         "bursts": len(bursts),
-        "tagging_todos": todos,
+        "taxonomy_pending": False,
+        "taxonomy_todos": 0,
+        "tagging_todos": tagging_todos,
     }
 
 
