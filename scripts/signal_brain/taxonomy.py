@@ -121,6 +121,10 @@ def finalize_taxonomy(
 
     Returns the parsed `{"taxonomy": [...], "notes": "..."}` or None if no done
     row exists yet (caller treats that as "taxonomy still pending").
+
+    An empty taxonomy list is rejected as malformed input: it returns None
+    (same as a missing/failing done row) and no cache file is written, so the
+    orchestrator re-dispatches the taxonomy subagent.
     """
     todos = {row["job_id"]: row for row in load_todo(todo_path)}
     todo = next(
@@ -137,6 +141,11 @@ def finalize_taxonomy(
         validate_response(resp, todo["response_schema"])
     except WorklistError:
         return None
+    # An empty taxonomy passes the schema (it only checks `list`) but is
+    # useless: it would flow through as a falsy required_taxonomy and silently
+    # disable controlled-vocabulary tagging. Treat it as still-pending.
+    if not resp["taxonomy"]:
+        return None
     cache_data = {
         "source_hash": source_hash,
         "taxonomy": resp["taxonomy"],
@@ -150,7 +159,11 @@ def finalize_taxonomy(
 
 
 def load_taxonomy_cache(cache_path: Path, *, source_hash: str) -> list[str] | None:
-    """Return the cached taxonomy slugs if `source_hash` matches. None otherwise."""
+    """Return the cached taxonomy slugs if `source_hash` matches. None otherwise.
+
+    A cached *empty* taxonomy is not a usable cache and returns None, so the
+    caller falls through to (re-)dispatching the taxonomy stage.
+    """
     cache_path = Path(cache_path)
     if not cache_path.exists():
         return None
@@ -161,6 +174,6 @@ def load_taxonomy_cache(cache_path: Path, *, source_hash: str) -> list[str] | No
     if data.get("source_hash") != source_hash:
         return None
     taxonomy = data.get("taxonomy")
-    if not isinstance(taxonomy, list):
+    if not isinstance(taxonomy, list) or not taxonomy:
         return None
     return taxonomy

@@ -120,6 +120,11 @@ def run_ingest_plan(*, source_path: Path, data_dir: Path,
     if taxonomy is None:
         # Try to finalize from an existing done file (the orchestrator may have
         # just produced it); otherwise emit the todo and return early.
+        #
+        # taxonomy.json is a content-hash-keyed cache, not an LLM deliverable —
+        # it is phase-agnostic by design. finalize_taxonomy is idempotent, so
+        # writing the cache here (from --plan, to self-progress) is intentional,
+        # not a plan/finalize layering leak. run_ingest_finalize writes it too.
         finalized = finalize_taxonomy(
             p["taxonomy_todo"], p["taxonomy_done"], p["taxonomy_cache"],
             source_hash=src_hash,

@@ -126,3 +126,31 @@ def test_load_taxonomy_cache_miss_on_hash_mismatch(tmp_path):
 
 def test_load_taxonomy_cache_missing_file_returns_none(tmp_path):
     assert load_taxonomy_cache(tmp_path / "nope.json", source_hash="sha1:abc") is None
+
+
+def test_finalize_taxonomy_rejects_empty_taxonomy(tmp_path):
+    """An empty taxonomy list is malformed input — treated as still-pending."""
+    msgs = [{"msg_id": "a::Me", "sender": "Me", "body": "x", "reactions": []}]
+    todo = tmp_path / "taxonomy.todo.jsonl"
+    emit_taxonomy_todo(msgs, todo, description="", source_hash="sha1:abc")
+    todo_row = load_todo(todo)[0]
+    done = tmp_path / "taxonomy.done.jsonl"
+    done.write_text(json.dumps({
+        "job_id": todo_row["job_id"],
+        "response": {"taxonomy": [], "notes": "empty"},
+    }) + "\n", encoding="utf-8")
+    cache = tmp_path / "taxonomy.json"
+    result = finalize_taxonomy(todo, done, cache, source_hash="sha1:abc")
+    assert result is None
+    assert not cache.exists()  # no cache written for an empty taxonomy
+
+
+def test_load_taxonomy_cache_rejects_empty_taxonomy(tmp_path):
+    """A cached empty taxonomy is not a usable cache."""
+    cache = tmp_path / "taxonomy.json"
+    cache.write_text(json.dumps({
+        "source_hash": "sha1:abc",
+        "taxonomy": [],
+        "notes": "",
+    }), encoding="utf-8")
+    assert load_taxonomy_cache(cache, source_hash="sha1:abc") is None
