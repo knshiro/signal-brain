@@ -30,3 +30,26 @@ def test_orphan_pages_flagged(tmp_path, tmp_wiki_dir):
     report = tmp_wiki_dir / "lint-report.md"
     run_lint(tmp_wiki_dir, data, report)
     assert "Orphan" in report.read_text(encoding="utf-8")
+
+
+def test_lint_reports_out_of_taxonomy_rate(tmp_path, tmp_wiki_dir):
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "bursts.jsonl").write_text("", encoding="utf-8")
+    (data / "msg_index.jsonl").write_text("", encoding="utf-8")
+    chunks = [
+        {"burst_id": "B0001", "topics": ["t"], "primary": "t", "summary": "s",
+         "out_of_taxonomy": True},
+        {"burst_id": "B0002", "topics": ["t"], "primary": "t", "summary": "s",
+         "out_of_taxonomy": True},
+        {"burst_id": "B0003", "topics": ["t"], "primary": "t", "summary": "s",
+         "out_of_taxonomy": False},
+    ]
+    (data / "chunks.jsonl").write_text(
+        "\n".join(json.dumps(c) for c in chunks), encoding="utf-8")
+    report = tmp_wiki_dir / "lint-report.md"
+    run_lint(tmp_wiki_dir, data, report)
+    text = report.read_text(encoding="utf-8")
+    assert "out_of_taxonomy" in text
+    assert "66.7" in text
+    assert "under-fitted" in text

@@ -25,7 +25,7 @@ The contract is file-based: each `--plan` invocation writes a `*.todo.jsonl` fil
 
 ## Step-by-step
 
-Use a task list (TodoWrite / update_plan) to track these. Mark each step `in_progress` when you start and `completed` when its CLI command exits with stats.
+Use a task list (TodoWrite / update_plan) to track these. Mark each step `in_progress` when you start and `completed` when its CLI command exits with stats. Note that step 2 is a **loop** (`ingest --plan` + fan-out) with a `2a` taxonomy sub-step; track it as one task and leave it `in_progress` until the loop converges.
 
 ### 1. Resolve the source
 
@@ -38,17 +38,59 @@ signal-brain list-sources
 
 If there's exactly one entry, use it. If multiple, surface the list and ask the user once. After this step, you have `SRC` (the source name, e.g. `SébastienBéal`).
 
-### 2. Ingest — plan phase
+### 2. Ingest — plan loop
+
+`signal-brain ingest --plan` is self-progressing. Run it, inspect the printed
+stats, and act on them in a loop until no stage is pending:
 
 ```bash
 signal-brain ingest --plan --source "$SRC"
 ```
 
-This writes `brain/$SRC/data/tagging.todo.jsonl`. Stats are printed. If `tagging_todos: 0`, skip to step 4 (nothing to tag — every burst is cached).
+| Stat in the output | What to do next |
+|---|---|
+| `taxonomy_pending: true` (with `taxonomy_todos: 1`) | Do **2a (taxonomy fan-out)**, then re-run `ingest --plan`. |
+| `taxonomy_pending: false`, `tagging_todos > 0` | Do **3 (tagging fan-out)**, then **4 (ingest --finalize)**. |
+| `taxonomy_pending: false`, `tagging_todos: 0` | Nothing to tag (all bursts cached). Skip to **4 (ingest --finalize)**. |
+
+Re-run `signal-brain ingest --plan --source "$SRC"` after each fan-out. The loop
+terminates when `taxonomy_pending` is false. Normally this is a two-iteration
+loop: iteration 1 emits the taxonomy todo, iteration 2 (after taxonomy fan-out)
+emits the tagging todos.
+
+**Guard against a stuck loop:** if `ingest --plan` returns `taxonomy_pending:
+true` again *after* you have already completed a taxonomy fan-out, the taxonomy
+subagent is producing an unusable result (e.g. an empty taxonomy, which the
+pipeline rejects). Do not loop a third time — stop, tell the user the taxonomy
+stage is not converging, and surface the contents of `data/taxonomy.failed.jsonl`
+(if present) or the latest `data/taxonomy.done.jsonl` row.
+
+#### 2a. Taxonomy fan-out
+
+Read `brain/$SRC/data/taxonomy.todo.jsonl`. It contains exactly **one** row.
+Dispatch a single subagent using the same prompt template as tagging (see Step 3):
+render that template verbatim with the row's `system_prompt`, `user_prompt`, and
+`response_schema` — including `{response_schema.required}` and
+`{response_schema.types}`. Do not hardcode the schema here; the todo row carries
+the correct, current shape, so referencing it can never drift.
+
+The taxonomy prompt embeds the full conversation, so it is a heavier call than a
+per-burst tag — allow it more time. On parse/schema failure, retry once exactly
+as for tagging; on a second failure, append to `brain/$SRC/data/taxonomy.failed.jsonl`
+and STOP — without a taxonomy, tagging produces uncontrolled slugs and the wiki
+regresses. Do not proceed to tagging.
+
+On success, append one row to `brain/$SRC/data/taxonomy.done.jsonl`:
+
+```json
+{"job_id": "<from todo>", "response": <parsed dict>, "model": "subagent"}
+```
+
+Then go back to **Step 2** and re-run `ingest --plan`.
 
 ### 3. Tagging fan-out
 
-Read `brain/$SRC/data/tagging.todo.jsonl`. For each row, dispatch one subagent. Cap concurrent dispatches at 30; batch sequentially beyond that.
+Read `brain/$SRC/data/tagging.todo.jsonl`. For each row, dispatch one subagent. Cap concurrent dispatches at 30; batch sequentially beyond that. This step is reached from the Step 2 loop once `taxonomy_pending` is false and `tagging_todos > 0`.
 
 **Subagent prompt template** — render this verbatim with the row's `system_prompt`, `user_prompt`, and `response_schema`:
 
@@ -173,7 +215,8 @@ If anything went into a `*.failed.jsonl`, point at the file and offer a re-run.
 
 Idempotent end-to-end. Re-running picks up where it left off:
 
-- Cached bursts (content-hash match against the manifest) skip steps 3.
+- A cached taxonomy (`taxonomy.done.jsonl` present) means iteration 1 of the Step 2 loop already returns `taxonomy_pending: false` — the loop runs once and the taxonomy fan-out (2a) is skipped.
+- Cached bursts (content-hash match against the manifest) skip the tagging fan-out (step 3): `ingest --plan` returns `tagging_todos: 0` and you go straight to step 4.
 - `done.jsonl` rows are kept; only missing/invalid jobs get re-dispatched.
 - Wiki pages already on disk are not re-synthesized unless their planned content changed (the spec's hash-based plan dedupes them).
 - Stage 1 links are deterministic — fast re-run.
@@ -188,6 +231,7 @@ To force a clean rebuild of one stage: delete the corresponding `*.done.jsonl` (
 | Subagent returned wrong schema | Same as above. |
 | Python CLI exits non-zero | Read stderr, surface to user. Do not auto-retry the CLI. |
 | `tagging.missing` non-empty after finalize | Stop. Tell the user which bursts; do not proceed. |
+| `ingest --plan` still `taxonomy_pending: true` after a taxonomy fan-out | Stuck loop. Stop after iteration 2 — do not fan out a third time. Surface `taxonomy.failed.jsonl` or the latest `taxonomy.done.jsonl` row. |
 | `synthesis.failed.jsonl` non-empty | Continue (per-page is recoverable). Surface in the summary. |
 | User's session is interrupted mid-fan-out | On re-run, the orchestrator sees existing done.jsonl rows and skips them. |
 

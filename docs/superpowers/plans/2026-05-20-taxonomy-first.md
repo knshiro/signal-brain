@@ -1402,3 +1402,42 @@ EOF
 2. **Placeholder scan:** none — every code block is complete. Lint helper assumes `lines` array convention; verify against `lint.py` shape during implementation and adapt.
 
 3. **Type consistency:** `burst_content_hash(burst, all_messages, *, taxonomy_hash="")` is consistent between Task 2 (definition), Task 3 (consumed in `emit_tagging_todos`), and Task 4 (consumed in `run_ingest_plan`). `TAGGING_RESPONSE_SCHEMA` includes `out_of_taxonomy` everywhere from Task 3 onwards. `emit_taxonomy_todo(messages, todo_path, *, description, source_hash)` keyword-only signature is used identically in Task 1 (test + impl) and Task 4 (call site).
+
+---
+
+## Phase 2 — topic-model redesign (added 2026-05-20)
+
+The Task 8 smoke test revealed the flat 24-slug taxonomy fragments themes (wealth split into 3 sibling slugs) and that `plan_pages` counts only `primary` at `min_concept_bursts=5`, so on 25 bursts no concept/position page fires. Phase 2 replaces the count threshold with AI judgment and improves topic granularity. Spec section: "Concept and position page selection".
+
+### Task 9: Taxonomy emits `concepts` + concept-grade topic prompt
+
+**Files:**
+- Modify: `scripts/signal_brain/taxonomy.py`
+- Modify: `scripts/signal_brain/ingest.py` (`load_taxonomy_cache` consumer)
+- Test: `scripts/tests/test_taxonomy.py`, `scripts/tests/test_ingest.py`
+
+- `TAXONOMY_RESPONSE_SCHEMA` gains `concepts`: `{"required": ["taxonomy", "concepts", "notes"], "types": {"taxonomy": "list", "concepts": "list", "notes": "str"}}`.
+- `build_system_prompt` rewritten: anti-fragmentation (merge facets of one theme into one umbrella slug; target ~10–18 topics) + concept-worthiness (mark a topic a `concept` when the two people develop arguments about it).
+- `build_user_prompt` "Output JSON" example includes `concepts`.
+- `finalize_taxonomy` writes `concepts` (defensively intersected with `taxonomy`) into `taxonomy.json`; still rejects empty `taxonomy`.
+- `load_taxonomy_cache` returns the full dict `{"taxonomy": [...], "concepts": [...], "notes": ...}` or `None` (was `list[str] | None`).
+- `run_ingest_plan` updated: `load_taxonomy_cache` now returns a dict — read `["taxonomy"]` for the tagging vocabulary.
+- Tests updated for the new field; `test_ingest.py::_complete_taxonomy_stage` writes `concepts` in its done row.
+
+### Task 10: `plan_pages` AI-decided concepts, drop `min_concept_bursts`
+
+**Files:**
+- Modify: `scripts/signal_brain/wiki/build.py`
+- Test: `scripts/tests/test_wiki_build.py`, `scripts/tests/test_build_wiki_plan_finalize.py`
+- Modify: `KNOWN_ISSUES.md` (remove resolved item #6)
+
+- `plan_pages` drops `min_concept_bursts`, gains `concepts: list[str]` keyword param.
+- Counts every topic on a burst (`chunk["topics"]`), not just `primary`.
+- Concept page for each slug in `concepts` backed by ≥1 chunk.
+- Position page for each (holder, concept-slug) backed by ≥1 burst where the holder participated and the slug is in the burst's topics.
+- `build_wiki_plan` drops `min_concept_bursts`, loads `taxonomy.json` for the `concepts` list, passes it to `plan_pages`. No `taxonomy.json` → `concepts = []` → no concept/position pages (graceful).
+- KNOWN_ISSUES #6 (`build_wiki hardcodes min_concept_bursts=5`) removed — resolved.
+
+### Task 11: Smoke test + PR (supersedes original Task 8)
+
+End-to-end run on the SébastienBéal export: taxonomy fan-out with the new prompt, tagging fan-out, finalize, `build-wiki --plan`, lint. Verify all six acceptance criteria — in particular ≥1 wealth-themed concept page and ≥1 `positions/thomas-martin--*.md`. Open the PR.

@@ -1,6 +1,8 @@
 """Wiki page build orchestration — plan/finalize.
 
-`plan_pages` decides which pages exist (deterministic, unchanged). `build_wiki_plan`
+`plan_pages` decides which pages exist (deterministic): concept and position
+pages are selected from the taxonomy `concepts` list, backed by burst coverage.
+`build_wiki_plan`
 walks the plan and emits one synthesis todo row per page via the worklist module.
 `build_wiki_finalize` reads the done file, validates each body against the page
 schema, and writes the .md file. Schema failures land in `synthesis.failed.jsonl`
@@ -29,14 +31,21 @@ def _sender_to_identity(sender: str, me: dict) -> tuple[str, str, str]:
 
 
 def plan_pages(bursts: list[dict], chunks: list[dict], arcs: list[dict],
-               min_concept_bursts: int, *, me: dict) -> dict:
+               *, me: dict, concepts: list[str]) -> dict:
     """Decide which pages should exist. Returns {"pages": {key: spec}}.
+
+    Concept and position pages are AI-decided: a concept page is planned for
+    each slug in `concepts` (the taxonomy's page-worthy topics) that is backed
+    by at least one burst. Topic counting considers every topic on a burst (the
+    full `topics` list), not just `primary` — a burst that substantively covers
+    a topic contributes to it even when it is not the single dominant one.
 
     Args:
         me: dict with keys sender_label, slug, name. Identifies the "Me" sender.
+        concepts: taxonomy `concepts` list — the AI's judgment of which topic
+            slugs are page-worthy. An empty list plans no concept/position pages.
     """
     chunk_by_burst = {c["burst_id"]: c for c in chunks}
-    topic_counts: dict[str, int] = defaultdict(int)
     topic_bursts: dict[str, list[str]] = defaultdict(list)
     person_bursts: dict[str, list[str]] = defaultdict(list)
     person_meta: dict[str, dict] = {}
@@ -45,9 +54,9 @@ def plan_pages(bursts: list[dict], chunks: list[dict], arcs: list[dict],
         c = chunk_by_burst.get(b["id"])
         if not c:
             continue
-        primary = c["primary"]
-        topic_counts[primary] += 1
-        topic_bursts[primary].append(b["id"])
+        topics = set(c.get("topics", []))
+        for topic in topics:
+            topic_bursts[topic].append(b["id"])
         for sender, n in b.get("senders", {}).items():
             if n == 0:
                 continue
@@ -56,7 +65,8 @@ def plan_pages(bursts: list[dict], chunks: list[dict], arcs: list[dict],
                 continue
             person_bursts[slug].append(b["id"])
             person_meta.setdefault(slug, {"name": name, "relation": relation})
-            person_topic_bursts[(slug, primary)].append(b["id"])
+            for topic in topics:
+                person_topic_bursts[(slug, topic)].append(b["id"])
 
     pages: dict[str, dict] = {}
     for slug, bs in person_bursts.items():
@@ -65,12 +75,14 @@ def plan_pages(bursts: list[dict], chunks: list[dict], arcs: list[dict],
             "slug": slug, "bursts": bs,
             "name": meta["name"], "relation": meta["relation"],
         }
-    for topic, count in topic_counts.items():
-        if count < min_concept_bursts:
+    concept_set = set(concepts)
+    for slug in concepts:
+        bs = topic_bursts.get(slug)
+        if not bs:
             continue
-        pages[f"concepts/{topic}"] = {"slug": topic, "bursts": topic_bursts[topic]}
+        pages[f"concepts/{slug}"] = {"slug": slug, "bursts": bs}
     for (holder, topic), bs in person_topic_bursts.items():
-        if topic_counts[topic] < min_concept_bursts:
+        if topic not in concept_set:
             continue
         pages[f"positions/{holder}--{topic}"] = {
             "holder": holder, "concept": topic, "bursts": bs,
@@ -109,9 +121,34 @@ def _load_jsonl(path: Path) -> list[dict]:
     ]
 
 
+def _load_concepts(data_dir: Path) -> list[str]:
+    """Read the `concepts` list from taxonomy.json. Empty list if absent or malformed.
+
+    Reads taxonomy.json directly, without a source-hash check: build-wiki consumes
+    `data_dir` as a single consistent ingest snapshot — taxonomy.json, chunks.jsonl
+    and bursts.jsonl are all produced by one ingest cycle. The source-hash guard
+    that protects against a stale taxonomy lives in the ingest stage
+    (`load_taxonomy_cache` / `run_ingest_plan`), which is the right place for it.
+    """
+    path = Path(data_dir) / "taxonomy.json"
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+    concepts = data.get("concepts", [])
+    return concepts if isinstance(concepts, list) else []
+
+
 def build_wiki_plan(*, data_dir: Path, wiki_dir: Path, me: dict,
-                    todo_path: Path, min_concept_bursts: int = 5) -> dict:
-    """Plan phase: emit one synthesis todo per page that should exist. No LLM."""
+                    todo_path: Path) -> dict:
+    """Plan phase: emit one synthesis todo per page that should exist. No LLM.
+
+    Concept and position page selection is driven by the `concepts` list in
+    `data_dir/taxonomy.json`. When that file is absent, `concepts` is empty and
+    no concept/position pages are planned — a graceful degradation, not an error.
+    """
     data_dir = Path(data_dir)
     wiki_dir = Path(wiki_dir)
     todo_path = Path(todo_path)
@@ -122,8 +159,9 @@ def build_wiki_plan(*, data_dir: Path, wiki_dir: Path, me: dict,
     chunks = _load_jsonl(data_dir / "chunks.jsonl")
     arcs = _load_jsonl(data_dir / "arcs.jsonl")
     chunks_by_id = {c["burst_id"]: c for c in chunks}
+    concepts = _load_concepts(data_dir)
 
-    plan = plan_pages(bursts, chunks, arcs, min_concept_bursts=min_concept_bursts, me=me)
+    plan = plan_pages(bursts, chunks, arcs, me=me, concepts=concepts)
     planned = 0
 
     for key, spec in plan["pages"].items():

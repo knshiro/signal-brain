@@ -8,6 +8,26 @@ from signal_brain.ingest import (
 from signal_brain.worklist import load_todo
 
 
+def _complete_taxonomy_stage(data_dir, *, taxonomy=("banter", "small-talk")):
+    """Drive the taxonomy stage of the staged plan.
+
+    `run_ingest_plan` is self-progressing: its first call emits a taxonomy
+    todo. This helper writes the matching `taxonomy.done.jsonl` row so a
+    subsequent `run_ingest_plan` call finalizes the taxonomy and moves on to
+    emitting tagging todos.
+    """
+    todos = load_todo(data_dir / "taxonomy.todo.jsonl")
+    assert len(todos) == 1, f"expected one taxonomy todo, got {len(todos)}"
+    done_row = {
+        "job_id": todos[0]["job_id"],
+        "response": {"taxonomy": list(taxonomy), "concepts": list(taxonomy),
+                     "notes": "test taxonomy"},
+    }
+    (data_dir / "taxonomy.done.jsonl").write_text(
+        json.dumps(done_row) + "\n", encoding="utf-8"
+    )
+
+
 def test_diff_messages_identifies_new_and_modified(tmp_data_dir):
     existing = [
         {"msg_id": "2026-05-05T13:00:00::Me", "date": "2026-05-05T13:00:00",
@@ -37,6 +57,15 @@ def test_run_ingest_plan_emits_tagging_todos(tmp_path, mini_messages):
     )
     data_dir = tmp_path / "data"
 
+    # First call: staged plan emits a taxonomy todo, not tagging todos.
+    run_ingest_plan(
+        source_path=src / "data.json",
+        data_dir=data_dir,
+        burst_threshold_min=60,
+    )
+    _complete_taxonomy_stage(data_dir)
+
+    # Second call: taxonomy is finalized, tagging todos are emitted.
     stats = run_ingest_plan(
         source_path=src / "data.json",
         data_dir=data_dir,
@@ -63,6 +92,10 @@ def test_plan_finalize_round_trip_writes_all_artifacts(tmp_path, mini_messages):
     )
     data_dir = tmp_path / "data"
 
+    # Staged plan: first call emits a taxonomy todo, second emits tagging todos.
+    run_ingest_plan(source_path=src / "data.json",
+                    data_dir=data_dir, burst_threshold_min=60)
+    _complete_taxonomy_stage(data_dir)
     run_ingest_plan(source_path=src / "data.json",
                     data_dir=data_dir, burst_threshold_min=60)
 
@@ -71,7 +104,7 @@ def test_plan_finalize_round_trip_writes_all_artifacts(tmp_path, mini_messages):
     done_rows = [
         {"job_id": t["job_id"],
          "response": {"topics": ["banter"], "primary": "banter",
-                      "summary": "banter sample"}}
+                      "summary": "banter sample", "out_of_taxonomy": False}}
         for t in todos
     ]
     (data_dir / "tagging.done.jsonl").write_text(
@@ -100,12 +133,17 @@ def test_replan_after_finalize_emits_no_new_todos(tmp_path, mini_messages):
         "\n".join(json.dumps(m) for m in mini_messages) + "\n", encoding="utf-8"
     )
     data_dir = tmp_path / "data"
+    # Staged plan: first call emits a taxonomy todo, second emits tagging todos.
+    run_ingest_plan(source_path=src / "data.json",
+                    data_dir=data_dir, burst_threshold_min=60)
+    _complete_taxonomy_stage(data_dir)
     run_ingest_plan(source_path=src / "data.json",
                     data_dir=data_dir, burst_threshold_min=60)
     todos1 = load_todo(data_dir / "tagging.todo.jsonl")
     done_rows = [
         {"job_id": t["job_id"],
-         "response": {"topics": ["banter"], "primary": "banter", "summary": "."}}
+         "response": {"topics": ["banter"], "primary": "banter", "summary": ".",
+                      "out_of_taxonomy": False}}
         for t in todos1
     ]
     (data_dir / "tagging.done.jsonl").write_text(
@@ -120,6 +158,112 @@ def test_replan_after_finalize_emits_no_new_todos(tmp_path, mini_messages):
     stats = run_ingest_plan(source_path=src / "data.json",
                             data_dir=data_dir, burst_threshold_min=60)
     assert stats["tagging_todos"] == 0
+
+
+def test_run_ingest_plan_emits_taxonomy_todo_when_no_cache(tmp_path):
+    """First call: no taxonomy.json -> emit taxonomy todo, suppress tagging todos."""
+    source = tmp_path / "src.jsonl"
+    source.write_text("\n".join([
+        json.dumps({"date": "2026-05-05T13:00:00", "sender": "Me", "body": "hi"}),
+        json.dumps({"date": "2026-05-05T13:00:01", "sender": "Friend", "body": "salut"}),
+    ]) + "\n", encoding="utf-8")
+    data_dir = tmp_path / "data"
+    stats = run_ingest_plan(
+        source_path=source, data_dir=data_dir, burst_threshold_min=60,
+    )
+    assert stats["taxonomy_pending"] is True
+    assert stats["taxonomy_todos"] == 1
+    assert stats["tagging_todos"] == 0
+    assert (data_dir / "taxonomy.todo.jsonl").exists()
+    tagging_todo = data_dir / "tagging.todo.jsonl"
+    assert not tagging_todo.exists() or \
+        sum(1 for _ in tagging_todo.open(encoding="utf-8")) == 0
+
+
+def test_run_ingest_plan_emits_tagging_when_taxonomy_cache_hit(tmp_path):
+    """Second call: taxonomy.json with matching hash -> emit tagging with required vocab."""
+    source = tmp_path / "src.jsonl"
+    source.write_text("\n".join([
+        json.dumps({"date": "2026-05-05T13:00:00", "sender": "Me", "body": "hi"}),
+        json.dumps({"date": "2026-05-05T13:00:01", "sender": "Friend", "body": "salut"}),
+    ]) + "\n", encoding="utf-8")
+    data_dir = tmp_path / "data"
+
+    # First call produces msg_index + the taxonomy todo.
+    run_ingest_plan(source_path=source, data_dir=data_dir, burst_threshold_min=60)
+
+    # Compute the hash run_ingest_plan will use and prime taxonomy.json.
+    from signal_brain.msg_index import load_msg_index
+    from signal_brain.taxonomy import source_content_hash
+    msgs = load_msg_index(data_dir / "msg_index.jsonl")
+    expected_hash = source_content_hash(msgs)
+    (data_dir / "taxonomy.json").write_text(json.dumps({
+        "source_hash": expected_hash,
+        "taxonomy": ["greeting", "small-talk"],
+        "concepts": ["small-talk"],
+        "notes": "",
+    }), encoding="utf-8")
+
+    stats = run_ingest_plan(source_path=source, data_dir=data_dir, burst_threshold_min=60)
+    assert stats["taxonomy_pending"] is False
+    assert stats["tagging_todos"] >= 1
+    row = json.loads((data_dir / "tagging.todo.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert "Required vocabulary" in row["user_prompt"]
+    assert "greeting" in row["user_prompt"]
+
+
+def test_run_ingest_finalize_writes_taxonomy_json_from_done(tmp_path):
+    """If taxonomy.done has a row matching the current source_hash, finalize writes the cache."""
+    source = tmp_path / "src.jsonl"
+    source.write_text(json.dumps({
+        "date": "2026-05-05T13:00:00", "sender": "Me", "body": "hi"
+    }) + "\n", encoding="utf-8")
+    data_dir = tmp_path / "data"
+    # Drive a plan to produce taxonomy.todo and msg_index.
+    run_ingest_plan(source_path=source, data_dir=data_dir, burst_threshold_min=60)
+    todo_row = load_todo(data_dir / "taxonomy.todo.jsonl")[0]
+    (data_dir / "taxonomy.done.jsonl").write_text(json.dumps({
+        "job_id": todo_row["job_id"],
+        "response": {"taxonomy": ["greeting"], "concepts": [], "notes": "n/a"},
+    }) + "\n", encoding="utf-8")
+
+    run_ingest_finalize(data_dir=data_dir, min_burst_count=2, min_msg_count=20)
+    data = json.loads((data_dir / "taxonomy.json").read_text(encoding="utf-8"))
+    assert data["taxonomy"] == ["greeting"]
+
+
+def test_run_ingest_plan_reports_zero_tagging_todos_after_finalize(tmp_path):
+    """Re-running ingest --plan after a completed finalize reports no work remaining."""
+    source = tmp_path / "src.jsonl"
+    source.write_text("\n".join([
+        json.dumps({"date": "2026-05-05T13:00:00", "sender": "Me", "body": "discuss capital"}),
+        json.dumps({"date": "2026-05-05T13:00:01", "sender": "Friend", "body": "ok"}),
+    ]) + "\n", encoding="utf-8")
+    data_dir = tmp_path / "data"
+
+    # First plan -> taxonomy todo; complete the taxonomy stage; second plan -> tagging todos.
+    run_ingest_plan(source_path=source, data_dir=data_dir, burst_threshold_min=60)
+    _complete_taxonomy_stage(data_dir)
+    stats = run_ingest_plan(source_path=source, data_dir=data_dir, burst_threshold_min=60)
+    assert stats["tagging_todos"] >= 1   # work pending before fan-out
+
+    # Simulate the tagging fan-out: write a done row for every tagging todo.
+    todos = load_todo(data_dir / "tagging.todo.jsonl")
+    done_lines = []
+    for t in todos:
+        done_lines.append(json.dumps({
+            "job_id": t["job_id"],
+            "response": {"topics": ["x"], "primary": "x", "summary": "y",
+                         "out_of_taxonomy": False},
+        }))
+    (data_dir / "tagging.done.jsonl").write_text("\n".join(done_lines) + "\n", encoding="utf-8")
+
+    run_ingest_finalize(data_dir=data_dir, min_burst_count=2, min_msg_count=20)
+
+    # Re-running plan now must report zero tagging work remaining.
+    stats2 = run_ingest_plan(source_path=source, data_dir=data_dir, burst_threshold_min=60)
+    assert stats2["tagging_todos"] == 0
+    assert stats2["taxonomy_pending"] is False
 
 
 def test_run_ingest_plan_scrubs_real_names_when_configured(tmp_path):

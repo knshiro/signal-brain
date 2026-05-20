@@ -39,3 +39,26 @@ def test_content_hash_is_stable():
     assert h1 == h2
     msgs[0]["body"] = "hi!"
     assert burst_content_hash(b, msgs) != h1
+
+
+def test_burst_content_hash_changes_when_taxonomy_hash_changes():
+    burst = {"msg_ids": ["a::Me"]}
+    messages = [{"msg_id": "a::Me", "body": "hi", "reactions": []}]
+    h_empty = burst_content_hash(burst, messages)
+    h_with_tax = burst_content_hash(burst, messages, taxonomy_hash="sha1:tax-v1")
+    h_with_tax2 = burst_content_hash(burst, messages, taxonomy_hash="sha1:tax-v2")
+    assert h_empty != h_with_tax
+    assert h_with_tax != h_with_tax2
+
+
+def test_burst_content_hash_default_taxonomy_hash_is_empty_string():
+    """Without an explicit taxonomy_hash, behaviour matches a literal "" suffix.
+
+    This locks in the back-compat shape: callers that don't pass taxonomy_hash
+    see the same value as callers passing "".
+    """
+    burst = {"msg_ids": ["a::Me"]}
+    messages = [{"msg_id": "a::Me", "body": "hi", "reactions": []}]
+    assert burst_content_hash(burst, messages) == burst_content_hash(
+        burst, messages, taxonomy_hash=""
+    )
