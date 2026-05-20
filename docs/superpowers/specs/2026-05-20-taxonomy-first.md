@@ -55,7 +55,7 @@ The taxonomy is cached at `brain/<src>/data/taxonomy.json`:
 }
 ```
 
-`load_taxonomy_cache` returns the full validated dict (or `None`); callers pick the field they need — `run_ingest_plan` reads `taxonomy` for the tagging vocabulary, `build_wiki_plan` reads `concepts` for page selection.
+`load_taxonomy_cache` returns the full validated dict (or `None`) and is used by `run_ingest_plan` to read `taxonomy` for the tagging vocabulary — the source-hash check belongs to the ingest stage, where taxonomy/source consistency is established. `build_wiki_plan` reads `concepts` from `taxonomy.json` directly (helper `_load_concepts`): it consumes `data_dir` as a single consistent ingest snapshot — taxonomy.json, chunks.jsonl, and bursts.jsonl are all produced by one ingest cycle — so it does not re-validate the hash, consistent with how it already reads `chunks.jsonl` unchecked.
 
 Cache hit when `source_hash` matches the SHA1 of the current msg_index. On hit, no taxonomy todo is emitted; the cached taxonomy is fed directly into the tagging stage. Cache miss = a new ingest run with non-trivially changed source → regenerate.
 

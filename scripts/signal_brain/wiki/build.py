@@ -80,7 +80,7 @@ def plan_pages(bursts: list[dict], chunks: list[dict], arcs: list[dict],
             continue
         pages[f"concepts/{slug}"] = {"slug": slug, "bursts": bs}
     for (holder, topic), bs in person_topic_bursts.items():
-        if topic not in concept_set or not bs:
+        if topic not in concept_set:
             continue
         pages[f"positions/{holder}--{topic}"] = {
             "holder": holder, "concept": topic, "bursts": bs,
@@ -120,7 +120,14 @@ def _load_jsonl(path: Path) -> list[dict]:
 
 
 def _load_concepts(data_dir: Path) -> list[str]:
-    """Read the `concepts` list from taxonomy.json. Empty list if absent or malformed."""
+    """Read the `concepts` list from taxonomy.json. Empty list if absent or malformed.
+
+    Reads taxonomy.json directly, without a source-hash check: build-wiki consumes
+    `data_dir` as a single consistent ingest snapshot — taxonomy.json, chunks.jsonl
+    and bursts.jsonl are all produced by one ingest cycle. The source-hash guard
+    that protects against a stale taxonomy lives in the ingest stage
+    (`load_taxonomy_cache` / `run_ingest_plan`), which is the right place for it.
+    """
     path = Path(data_dir) / "taxonomy.json"
     if not path.exists():
         return []
