@@ -15,7 +15,7 @@ These items surfaced during code-quality reviews and the final whole-implementat
 
 ## Quality / robustness
 
-6. **`build_wiki` hardcodes `min_concept_bursts=5`.** `config.toml` has no matching key. Should add `[wiki] min_concept_bursts = 5` and wire it through `cli.py`'s `build-wiki` command.
+6. **(resolved 2026-05-20)** `min_concept_bursts` removed — concept/position page selection is now driven by the taxonomy `concepts` list.
 7. **`counterpart_summary` is a placeholder.** In `scripts/signal_brain/wiki/build.py` the position-page generator passes the holder's own burst summary as the counterpart's. Comment acknowledges "adequate first pass". Real counterpart summary needs to filter the same arc's bursts by sender.
 8. **`evaluate_bursts` indexes `msgs[mid]` without `.get()` guard.** `KeyError` on a missing message ID. Low risk (`bursts.jsonl` and `msg_index.jsonl` are produced together), but defensive code would not hurt.
 9. **`Manifest` schema-version mismatch silently starts fresh.** Currently behaves as "fresh init" without warning. Should log a one-line notice.

@@ -85,14 +85,17 @@ Overview.
 """
 
 
-def _seed_data(data_dir: Path) -> None:
-    """Write minimal bursts + chunks under data_dir to drive plan_pages.
+def _seed_data(data_dir: Path, *, with_taxonomy: bool = True) -> None:
+    """Write minimal bursts + chunks (+ taxonomy.json) under data_dir.
 
-    Six bursts on `topic-a` (above min_concept_bursts=5) gives us:
+    Six bursts on `topic-a`, with `topic-a` listed as a taxonomy concept, gives:
     - 2 people pages (thomas-martin, friend)
     - 1 concept page (topic-a)
     - 2 position pages (one per person)
     - 4 cross seed pages (none exist on disk yet)
+
+    With `with_taxonomy=False`, no taxonomy.json is written, so plan_pages
+    receives an empty `concepts` list and plans no concept/position pages.
     """
     bursts = [
         {"id": f"B{i:04d}", "msg_ids": ["m1"], "start": "2026-05-05T13:00",
@@ -111,6 +114,16 @@ def _seed_data(data_dir: Path) -> None:
         "\n".join(json.dumps(c) for c in chunks) + "\n", encoding="utf-8",
     )
     (data_dir / "arcs.jsonl").write_text("", encoding="utf-8")
+    if with_taxonomy:
+        (data_dir / "taxonomy.json").write_text(
+            json.dumps({
+                "source_hash": "sha1:test",
+                "taxonomy": ["topic-a"],
+                "concepts": ["topic-a"],
+                "notes": "",
+            }),
+            encoding="utf-8",
+        )
 
 
 def test_plan_emits_one_todo_per_planned_page(tmp_path):
@@ -219,3 +232,25 @@ def test_finalize_records_schema_failure_without_writing(tmp_path):
     assert failed_rows[0]["job_id"] == target["job_id"]
     assert failed_rows[0]["page_type"] == "person"
     assert "Missing sections" in failed_rows[0]["error"]
+
+
+def test_build_wiki_plan_no_taxonomy_json_plans_no_concepts(tmp_path):
+    """Without taxonomy.json, concepts is empty: no concept/position pages,
+    but people/arc/cross pages are still planned."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    wiki_dir = tmp_path / "wiki"
+    todo_path = data_dir / "synthesis.todo.jsonl"
+    _seed_data(data_dir, with_taxonomy=False)
+    assert not (data_dir / "taxonomy.json").exists()
+
+    build_wiki_plan(
+        data_dir=data_dir, wiki_dir=wiki_dir, me=ME, todo_path=todo_path,
+    )
+    rows = load_todo(todo_path)
+    kinds = [r["kind"] for r in rows]
+    assert kinds.count("page-concept") == 0
+    assert kinds.count("page-position") == 0
+    # People and cross pages are independent of the taxonomy.
+    assert kinds.count("page-person") == 2
+    assert kinds.count("page-cross") == 4
