@@ -76,3 +76,36 @@ def test_build_msg_index_char_count_uses_scrubbed_length(tmp_data_dir):
     build_msg_index(messages, out, scrub=scrub)
     row = json.loads(out.read_text(encoding="utf-8").splitlines()[0])
     assert row["char_count"] == len("Thomas")
+
+
+def test_build_msg_index_scrubs_reactions_sender(tmp_data_dir):
+    """Reactions store the reactor's contact name; that name must also be scrubbed."""
+    messages = [
+        {"date": "2026-05-05T13:18:00.000000", "sender": "Friend",
+         "body": "hi", "quote": "",
+         "reactions": [["Ugo", "👍"], ["SébastienBéal", "❤️"]],
+         "attachments": []},
+    ]
+    scrub = compile_scrubber(["Ugo"], "Thomas Martin")
+    out = tmp_data_dir / "msg_index.jsonl"
+    build_msg_index(messages, out, scrub=scrub)
+    row = json.loads(out.read_text(encoding="utf-8").splitlines()[0])
+    # Operator's reaction is scrubbed; the other party's reaction is unchanged.
+    assert row["reactions"] == [["Thomas", "👍"], ["SébastienBéal", "❤️"]]
+
+
+def test_build_msg_index_handles_malformed_reactions_gracefully(tmp_data_dir):
+    """Defensive: malformed reaction entries don't crash the scrubber."""
+    messages = [
+        {"date": "2026-05-05T13:18:00.000000", "sender": "Friend",
+         "body": "hi", "quote": "",
+         "reactions": [[], [None, "👍"], ["", "❤️"], ["Ugo", "👍"]],
+         "attachments": []},
+    ]
+    scrub = compile_scrubber(["Ugo"], "Thomas Martin")
+    out = tmp_data_dir / "msg_index.jsonl"
+    build_msg_index(messages, out, scrub=scrub)
+    row = json.loads(out.read_text(encoding="utf-8").splitlines()[0])
+    # Malformed entries pass through; the one well-formed Ugo gets scrubbed.
+    assert ["Thomas", "👍"] in row["reactions"]
+    assert [None, "👍"] in row["reactions"]

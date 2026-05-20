@@ -18,8 +18,9 @@ def build_msg_index(
 ) -> int:
     """Write deduplicated msg_index.jsonl. Returns row count.
 
-    If `scrub` is provided, it's applied to the `body` and `quote` fields before
-    they're written. The resulting `char_count` reflects the post-scrub body.
+    If `scrub` is provided, it's applied to the `body` and `quote` fields, and
+    to the reactor-name slot of each reaction entry (`reactions[*][0]`) before
+    rows are written. The resulting `char_count` reflects the post-scrub body.
     """
     apply = scrub or (lambda s: s)
     seen: set[str] = set()
@@ -31,13 +32,19 @@ def build_msg_index(
         seen.add(mid)
         body = apply(m.get("body", ""))
         quote = apply(m.get("quote", ""))
+        scrubbed_reactions = []
+        for r in m.get("reactions", []):
+            if isinstance(r, list) and r and isinstance(r[0], str):
+                scrubbed_reactions.append([apply(r[0]), *r[1:]])
+            else:
+                scrubbed_reactions.append(r)
         rows.append({
             "msg_id": mid,
             "date": m["date"],
             "sender": m["sender"],
             "body": body,
             "quote": quote,
-            "reactions": m.get("reactions", []),
+            "reactions": scrubbed_reactions,
             "attachments": m.get("attachments", []),
             "char_count": len(body),
         })
