@@ -76,7 +76,7 @@ def test_finalize_tagging_consumes_done_rows(tmp_path, mocker):
     done.write_text(json.dumps({
         "job_id": todo_row["job_id"],
         "response": {"topics": ["topic-y"], "primary": "topic-y",
-                     "summary": "Discusses Y."},
+                     "summary": "Discusses Y.", "out_of_taxonomy": False},
     }) + "\n", encoding="utf-8")
 
     chunks = tmp_path / "chunks.jsonl"
@@ -180,3 +180,85 @@ def test_emit_forwards_description_and_seed_tags_into_prompts(tmp_path, mocker):
     assert "Context: two friends talking shop" in row["system_prompt"]
     assert "Seed tags" in row["user_prompt"]
     assert "work" in row["user_prompt"]
+
+
+def test_system_prompt_includes_required_vocabulary_when_taxonomy_provided():
+    prompt = build_system_prompt(required_taxonomy=["wealth", "media"])
+    assert "controlled vocabulary" in prompt.lower() or "required vocabulary" in prompt.lower()
+    assert "out_of_taxonomy" in prompt
+
+
+def test_system_prompt_neutral_when_no_taxonomy():
+    prompt = build_system_prompt()
+    assert "controlled vocabulary" not in prompt.lower()
+    assert "out_of_taxonomy" not in prompt
+
+
+def test_user_prompt_includes_required_vocabulary_section():
+    prompt = build_user_prompt(
+        "B0001", "2026-05-05T13:00", "Me: hi",
+        seed_tags=None,
+        required_taxonomy=["wealth-concentration", "media-criticism"],
+    )
+    assert "Required vocabulary" in prompt
+    assert "wealth-concentration" in prompt
+    assert "media-criticism" in prompt
+
+
+def test_user_prompt_required_taxonomy_takes_precedence_over_seed_tags():
+    """When both are set, the required-vocabulary framing wins; soft seed_tags suppressed."""
+    prompt = build_user_prompt(
+        "B0001", "2026-05-05T13:00", "Me: hi",
+        seed_tags=["soft-a"],
+        required_taxonomy=["hard-b"],
+    )
+    assert "Required vocabulary" in prompt
+    assert "hard-b" in prompt
+    assert "Seed tags" not in prompt
+
+
+def test_tagging_schema_includes_out_of_taxonomy():
+    from signal_brain.tagging import TAGGING_RESPONSE_SCHEMA
+    assert "out_of_taxonomy" in TAGGING_RESPONSE_SCHEMA["required"]
+    assert TAGGING_RESPONSE_SCHEMA["types"]["out_of_taxonomy"] == "bool"
+
+
+def test_emit_tagging_todos_threads_taxonomy_into_prompt(tmp_path, mocker):
+    bursts = [{"id": "B0100", "msg_ids": ["a::Me"], "start": "2026-05-05T13:00"}]
+    msgs = [{"msg_id": "a::Me", "sender": "Me", "body": "discutons",
+             "date": "2026-05-05T13:00"}]
+    mocker.patch("signal_brain.tagging.burst_content_hash", return_value="sha1:n")
+    todo = tmp_path / "tagging.todo.jsonl"
+    emit_tagging_todos(
+        bursts, msgs, {}, todo,
+        required_taxonomy=["wealth-concentration", "media-criticism"],
+    )
+    row = load_todo(todo)[0]
+    assert "Required vocabulary" in row["user_prompt"]
+    assert "wealth-concentration" in row["user_prompt"]
+    assert "out_of_taxonomy" in row["system_prompt"]
+
+
+def test_finalize_tagging_propagates_out_of_taxonomy_to_chunks(tmp_path, mocker):
+    bursts = [{"id": "B0200", "msg_ids": ["a::Me"], "start": "2026-05-05T14:00"}]
+    msgs = [{"msg_id": "a::Me", "sender": "Me", "body": "hi",
+             "date": "2026-05-05T14:00"}]
+    mocker.patch("signal_brain.tagging.burst_content_hash", return_value="sha1:n")
+    todo = tmp_path / "tagging.todo.jsonl"
+    emit_tagging_todos(bursts, msgs, {}, todo,
+                       required_taxonomy=["wealth-concentration"])
+    todo_row = load_todo(todo)[0]
+    done = tmp_path / "tagging.done.jsonl"
+    done.write_text(json.dumps({
+        "job_id": todo_row["job_id"],
+        "response": {
+            "topics": ["wealth-concentration"],
+            "primary": "wealth-concentration",
+            "summary": "About money.",
+            "out_of_taxonomy": False,
+        },
+    }) + "\n", encoding="utf-8")
+    chunks = tmp_path / "chunks.jsonl"
+    finalize_tagging(bursts, {}, todo, done, chunks)
+    row = json.loads(chunks.read_text(encoding="utf-8").splitlines()[0])
+    assert row["out_of_taxonomy"] is False

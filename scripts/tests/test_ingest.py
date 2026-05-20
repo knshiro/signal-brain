@@ -71,7 +71,7 @@ def test_plan_finalize_round_trip_writes_all_artifacts(tmp_path, mini_messages):
     done_rows = [
         {"job_id": t["job_id"],
          "response": {"topics": ["banter"], "primary": "banter",
-                      "summary": "banter sample"}}
+                      "summary": "banter sample", "out_of_taxonomy": False}}
         for t in todos
     ]
     (data_dir / "tagging.done.jsonl").write_text(
@@ -105,7 +105,8 @@ def test_replan_after_finalize_emits_no_new_todos(tmp_path, mini_messages):
     todos1 = load_todo(data_dir / "tagging.todo.jsonl")
     done_rows = [
         {"job_id": t["job_id"],
-         "response": {"topics": ["banter"], "primary": "banter", "summary": "."}}
+         "response": {"topics": ["banter"], "primary": "banter", "summary": ".",
+                      "out_of_taxonomy": False}}
         for t in todos1
     ]
     (data_dir / "tagging.done.jsonl").write_text(

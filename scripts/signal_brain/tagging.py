@@ -25,14 +25,33 @@ from signal_brain.worklist import (
 
 
 TAGGING_RESPONSE_SCHEMA = {
-    "required": ["topics", "primary", "summary"],
-    "types": {"topics": "list", "primary": "str", "summary": "str"},
+    "required": ["topics", "primary", "summary", "out_of_taxonomy"],
+    "types": {"topics": "list", "primary": "str", "summary": "str",
+              "out_of_taxonomy": "bool"},
 }
 
 
-def build_system_prompt(description: str = "") -> str:
-    """System prompt for the tagger. `description` is an optional context hint."""
+def build_system_prompt(
+    description: str = "",
+    *,
+    required_taxonomy: list[str] | None = None,
+) -> str:
+    """System prompt for the tagger. `description` is an optional context hint.
+
+    When `required_taxonomy` is provided, the tagger is constrained to draw
+    `topics` from that controlled vocabulary; bursts that genuinely don't fit
+    set `out_of_taxonomy: true` and may propose a new slug.
+    """
     context = f"\n\nContext: {description}." if description.strip() else ""
+    if required_taxonomy:
+        taxonomy_rules = (
+            "- Select all entries of \"topics\" from the controlled vocabulary in the user prompt.\n"
+            "- Set \"out_of_taxonomy\": true only when NO vocabulary term genuinely fits;\n"
+            "  in that case you may propose a new slug in \"topics\".\n"
+            "- Otherwise set \"out_of_taxonomy\": false.\n"
+        )
+    else:
+        taxonomy_rules = ""
     return (
         "You are a topic tagger for a Signal conversation between two people. "
         "Tag each burst with 1-3 topics." + context + "\n\n"
@@ -42,23 +61,42 @@ def build_system_prompt(description: str = "") -> str:
         "- Quotes in summaries must preserve the original source language.\n"
         "- \"primary\" is the single dominant topic.\n"
         "- \"summary\" is one sentence (<= 25 words) describing what was discussed, in English.\n"
+        + taxonomy_rules
     )
 
 
-def build_user_prompt(burst_id: str, start: str, messages: str,
-                     seed_tags: list[str] | None) -> str:
-    """User prompt for a single burst. `seed_tags` is optional; empty means no priming."""
-    seed_section = ""
-    if seed_tags:
-        seed_section = (
+def build_user_prompt(
+    burst_id: str,
+    start: str,
+    messages: str,
+    seed_tags: list[str] | None,
+    *,
+    required_taxonomy: list[str] | None = None,
+) -> str:
+    """User prompt for a single burst.
+
+    Precedence: when `required_taxonomy` is provided, it appears as "Required
+    vocabulary" and `seed_tags` is suppressed (the harder framing wins). When
+    only `seed_tags` is provided, it appears as soft "Seed tags". When both are
+    empty/None, the prompt has no priming section.
+    """
+    priming = ""
+    if required_taxonomy:
+        priming = (
+            "Required vocabulary (choose topics from this list; set "
+            "out_of_taxonomy: true only if no entry fits):\n"
+            f"{', '.join(required_taxonomy)}\n\n"
+        )
+    elif seed_tags:
+        priming = (
             "Seed tags (use when they fit; you may propose new ones if needed):\n"
             f"{', '.join(seed_tags)}\n\n"
         )
     return (
-        f"{seed_section}"
+        f"{priming}"
         f"Burst {burst_id} ({start}):\n"
         f"---\n{messages}\n---\n\n"
-        'Output JSON:\n{"topics": ["...", "..."], "primary": "...", "summary": "..."}'
+        'Output JSON:\n{"topics": ["..."], "primary": "...", "summary": "...", "out_of_taxonomy": false}'
     )
 
 
@@ -83,17 +121,23 @@ def emit_tagging_todos(
     *,
     description: str = "",
     seed_tags: list[str] | None = None,
+    required_taxonomy: list[str] | None = None,
+    taxonomy_hash: str = "",
 ) -> dict[str, str]:
     """Plan phase: for each cache-miss burst, append a todo row.
+
+    `required_taxonomy` (optional) is the controlled vocabulary; when set, the
+    prompt enforces it and `seed_tags` is suppressed. `taxonomy_hash` is folded
+    into `burst_content_hash` so taxonomy changes invalidate cache.
 
     Returns a `{burst_id: content_hash}` map so the caller can persist it in the
     manifest. The hash is computed for every burst (cache hit or miss) so the
     manifest reflects the post-run state.
     """
-    system_prompt = build_system_prompt(description)
+    system_prompt = build_system_prompt(description, required_taxonomy=required_taxonomy)
     new_hashes: dict[str, str] = {}
     for b in bursts:
-        h = burst_content_hash(b, all_messages)
+        h = burst_content_hash(b, all_messages, taxonomy_hash=taxonomy_hash)
         new_hashes[b["id"]] = h
         cached = cache_by_id.get(b["id"])
         if cached and cached.get("hash") == h:
@@ -102,6 +146,7 @@ def emit_tagging_todos(
             burst_id=b["id"], start=b["start"],
             messages=_render_burst_for_tagging(b, all_messages),
             seed_tags=seed_tags,
+            required_taxonomy=required_taxonomy,
         )
         emit(
             todo_path,
@@ -156,6 +201,7 @@ def finalize_tagging(
             out_rows.append({
                 "burst_id": bid, "topics": prior["topics"],
                 "primary": prior["primary"], "summary": prior["summary"],
+                "out_of_taxonomy": prior.get("out_of_taxonomy", False),
             })
             cached += 1
             continue
@@ -172,6 +218,7 @@ def finalize_tagging(
         out_rows.append({
             "burst_id": bid, "topics": resp["topics"],
             "primary": resp["primary"], "summary": resp["summary"],
+            "out_of_taxonomy": resp.get("out_of_taxonomy", False),
         })
         new += 1
 
@@ -198,5 +245,6 @@ def load_chunks_as_cache(chunks_path: Path, hashes_by_id: dict[str, str]) -> dic
         cache[row["burst_id"]] = {
             "hash": hashes_by_id.get(row["burst_id"], ""),
             "topics": row["topics"], "primary": row["primary"], "summary": row["summary"],
+            "out_of_taxonomy": row.get("out_of_taxonomy", False),
         }
     return cache
