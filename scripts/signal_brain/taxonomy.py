@@ -26,8 +26,8 @@ from signal_brain.worklist import (
 
 
 TAXONOMY_RESPONSE_SCHEMA = {
-    "required": ["taxonomy", "notes"],
-    "types": {"taxonomy": "list", "notes": "str"},
+    "required": ["taxonomy", "concepts", "notes"],
+    "types": {"taxonomy": "list", "concepts": "list", "notes": "str"},
 }
 
 
@@ -49,18 +49,22 @@ def build_system_prompt(description: str = "") -> str:
     context = f"\n\nContext: {description}." if description.strip() else ""
     return (
         "You are a vocabulary curator for a Signal conversation between two people. "
-        "Your job is to extract a small, canonical taxonomy of topic slugs that "
-        "describe the recurring themes of the whole conversation." + context + "\n\n"
+        "Read the whole conversation and produce two things: a `taxonomy` of topic "
+        "slugs covering its recurring themes, and a `concepts` subset naming the "
+        "themes substantial enough to deserve their own wiki page." + context + "\n\n"
         "Rules:\n"
         "- Output VALID JSON. No prose around it.\n"
-        "- Output language: English (lowercase, kebab-case slugs).\n"
-        "- Aim for 10-25 slugs, choosing the granularity that best canonicalises\n"
-        "  recurring themes. Too few collapses distinct topics; too many fragments\n"
-        "  shared themes into unique ones.\n"
-        "- Prefer compound slugs that name concrete themes (e.g.\n"
-        "  \"home-renovation\", \"book-recommendations\") over generic single words\n"
-        "  (e.g. \"money\", \"news\").\n"
-        "- The `notes` field is one or two sentences summarising the taxonomy.\n"
+        "- Slugs are lowercase kebab-case English (even when the conversation is not in English).\n"
+        "- TOPIC GRANULARITY: each `taxonomy` slug must be broad enough to recur across\n"
+        "  the conversation. Merge facets of one theme into a single umbrella slug — do\n"
+        "  NOT fragment a theme into siblings. For example, wealth concentration,\n"
+        "  billionaires, and wealth taxation are facets of ONE topic (e.g.\n"
+        "  \"wealth-and-inequality\"), not three. Aim for roughly 10-18 topics; if you\n"
+        "  pass ~20 you are fragmenting and should consolidate.\n"
+        "- `concepts` is the subset of `taxonomy` slugs that are substantial themes the\n"
+        "  two people develop arguments about — not incidental logistics, greetings, or\n"
+        "  one-off banter. Every entry of `concepts` MUST also appear in `taxonomy`.\n"
+        "- `notes` is one or two sentences summarising the taxonomy.\n"
     )
 
 
@@ -71,7 +75,9 @@ def build_user_prompt(messages_text: str) -> str:
         "---\n"
         f"{messages_text}\n"
         "---\n\n"
-        'Output JSON:\n{"taxonomy": ["slug-1", "slug-2", "..."], "notes": "..."}'
+        'Output JSON:\n'
+        '{"taxonomy": ["slug-1", "slug-2", "..."], '
+        '"concepts": ["slug-1", "..."], "notes": "..."}'
     )
 
 
@@ -119,12 +125,15 @@ def finalize_taxonomy(
 ) -> dict | None:
     """Read the done row matching the source_hash, write the cache file.
 
-    Returns the parsed `{"taxonomy": [...], "notes": "..."}` or None if no done
-    row exists yet (caller treats that as "taxonomy still pending").
+    Returns the parsed `{"source_hash", "taxonomy", "concepts", "notes"}` dict
+    or None if no done row exists yet (caller treats that as "taxonomy still
+    pending").
 
     An empty taxonomy list is rejected as malformed input: it returns None
     (same as a missing/failing done row) and no cache file is written, so the
-    orchestrator re-dispatches the taxonomy subagent.
+    orchestrator re-dispatches the taxonomy subagent. An empty `concepts` list
+    is allowed (a conversation with no page-worthy theme is valid, just rare).
+    Any `concepts` slug not present in `taxonomy` is dropped defensively.
     """
     todos = {row["job_id"]: row for row in load_todo(todo_path)}
     todo = next(
@@ -146,9 +155,13 @@ def finalize_taxonomy(
     # disable controlled-vocabulary tagging. Treat it as still-pending.
     if not resp["taxonomy"]:
         return None
+    taxonomy_list = resp["taxonomy"]
+    taxonomy_set = set(taxonomy_list)
+    concepts = [c for c in resp["concepts"] if c in taxonomy_set]
     cache_data = {
         "source_hash": source_hash,
-        "taxonomy": resp["taxonomy"],
+        "taxonomy": taxonomy_list,
+        "concepts": concepts,
         "notes": resp["notes"],
     }
     Path(cache_path).write_text(
@@ -158,11 +171,16 @@ def finalize_taxonomy(
     return cache_data
 
 
-def load_taxonomy_cache(cache_path: Path, *, source_hash: str) -> list[str] | None:
-    """Return the cached taxonomy slugs if `source_hash` matches. None otherwise.
+def load_taxonomy_cache(cache_path: Path, *, source_hash: str) -> dict | None:
+    """Return the full cached taxonomy dict if `source_hash` matches. None otherwise.
+
+    The dict has the shape `{"source_hash", "taxonomy", "concepts", "notes"}`.
+    Callers read `taxonomy` (tagging vocabulary) or `concepts` (page selection).
 
     A cached *empty* taxonomy is not a usable cache and returns None, so the
-    caller falls through to (re-)dispatching the taxonomy stage.
+    caller falls through to (re-)dispatching the taxonomy stage. A cache written
+    by an older finalize that predates `concepts` is tolerated: `concepts` is
+    defaulted to an empty list so stale caches don't crash callers.
     """
     cache_path = Path(cache_path)
     if not cache_path.exists():
@@ -176,4 +194,5 @@ def load_taxonomy_cache(cache_path: Path, *, source_hash: str) -> list[str] | No
     taxonomy = data.get("taxonomy")
     if not isinstance(taxonomy, list) or not taxonomy:
         return None
-    return taxonomy
+    data.setdefault("concepts", [])
+    return data

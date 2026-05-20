@@ -38,8 +38,9 @@ def test_source_content_hash_changes_when_message_added():
 
 
 def test_taxonomy_schema_shape():
-    assert TAXONOMY_RESPONSE_SCHEMA["required"] == ["taxonomy", "notes"]
+    assert TAXONOMY_RESPONSE_SCHEMA["required"] == ["taxonomy", "concepts", "notes"]
     assert TAXONOMY_RESPONSE_SCHEMA["types"]["taxonomy"] == "list"
+    assert TAXONOMY_RESPONSE_SCHEMA["types"]["concepts"] == "list"
     assert TAXONOMY_RESPONSE_SCHEMA["types"]["notes"] == "str"
 
 
@@ -92,14 +93,17 @@ def test_finalize_taxonomy_writes_cache(tmp_path):
     done.write_text(json.dumps({
         "job_id": todo_row["job_id"],
         "response": {"taxonomy": ["wealth-concentration", "media-criticism"],
+                     "concepts": ["wealth-concentration"],
                      "notes": "two themes"},
     }) + "\n", encoding="utf-8")
     cache = tmp_path / "taxonomy.json"
     result = finalize_taxonomy(todo, done, cache, source_hash="sha1:abc")
     assert result["taxonomy"] == ["wealth-concentration", "media-criticism"]
+    assert result["concepts"] == ["wealth-concentration"]
     data = json.loads(cache.read_text(encoding="utf-8"))
     assert data["source_hash"] == "sha1:abc"
     assert data["taxonomy"] == ["wealth-concentration", "media-criticism"]
+    assert data["concepts"] == ["wealth-concentration"]
     assert data["notes"] == "two themes"
 
 
@@ -108,10 +112,12 @@ def test_load_taxonomy_cache_hit(tmp_path):
     cache.write_text(json.dumps({
         "source_hash": "sha1:abc",
         "taxonomy": ["a", "b"],
+        "concepts": ["a"],
         "notes": "",
     }), encoding="utf-8")
     result = load_taxonomy_cache(cache, source_hash="sha1:abc")
-    assert result == ["a", "b"]
+    assert result["taxonomy"] == ["a", "b"]
+    assert result["concepts"] == ["a"]
 
 
 def test_load_taxonomy_cache_miss_on_hash_mismatch(tmp_path):
@@ -137,12 +143,47 @@ def test_finalize_taxonomy_rejects_empty_taxonomy(tmp_path):
     done = tmp_path / "taxonomy.done.jsonl"
     done.write_text(json.dumps({
         "job_id": todo_row["job_id"],
-        "response": {"taxonomy": [], "notes": "empty"},
+        "response": {"taxonomy": [], "concepts": [], "notes": "empty"},
     }) + "\n", encoding="utf-8")
     cache = tmp_path / "taxonomy.json"
     result = finalize_taxonomy(todo, done, cache, source_hash="sha1:abc")
     assert result is None
     assert not cache.exists()  # no cache written for an empty taxonomy
+
+
+def test_finalize_taxonomy_drops_off_list_concepts(tmp_path):
+    """A `concepts` slug not present in `taxonomy` is dropped defensively."""
+    msgs = [{"msg_id": "a::Me", "sender": "Me", "body": "x", "reactions": []}]
+    todo = tmp_path / "taxonomy.todo.jsonl"
+    emit_taxonomy_todo(msgs, todo, description="", source_hash="sha1:abc")
+    todo_row = load_todo(todo)[0]
+    done = tmp_path / "taxonomy.done.jsonl"
+    done.write_text(json.dumps({
+        "job_id": todo_row["job_id"],
+        "response": {"taxonomy": ["wealth-concentration", "media-criticism"],
+                     "concepts": ["wealth-concentration", "off-list-slug"],
+                     "notes": "two themes"},
+    }) + "\n", encoding="utf-8")
+    cache = tmp_path / "taxonomy.json"
+    result = finalize_taxonomy(todo, done, cache, source_hash="sha1:abc")
+    assert result["concepts"] == ["wealth-concentration"]
+    data = json.loads(cache.read_text(encoding="utf-8"))
+    assert data["concepts"] == ["wealth-concentration"]
+    assert "off-list-slug" not in data["concepts"]
+
+
+def test_load_taxonomy_cache_defaults_missing_concepts(tmp_path):
+    """A cache written by an old finalize (no `concepts` key) defaults it to []."""
+    cache = tmp_path / "taxonomy.json"
+    cache.write_text(json.dumps({
+        "source_hash": "sha1:abc",
+        "taxonomy": ["a", "b"],
+        "notes": "old shape",
+    }), encoding="utf-8")
+    result = load_taxonomy_cache(cache, source_hash="sha1:abc")
+    assert result is not None
+    assert result["taxonomy"] == ["a", "b"]
+    assert result["concepts"] == []
 
 
 def test_load_taxonomy_cache_rejects_empty_taxonomy(tmp_path):

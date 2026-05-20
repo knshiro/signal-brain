@@ -116,8 +116,8 @@ def run_ingest_plan(*, source_path: Path, data_dir: Path,
 
     # Stage 1: taxonomy.
     src_hash = source_content_hash(msgs)
-    taxonomy = load_taxonomy_cache(p["taxonomy_cache"], source_hash=src_hash)
-    if taxonomy is None:
+    taxonomy_cache = load_taxonomy_cache(p["taxonomy_cache"], source_hash=src_hash)
+    if taxonomy_cache is None:
         # Try to finalize from an existing done file (the orchestrator may have
         # just produced it); otherwise emit the todo and return early.
         #
@@ -130,7 +130,8 @@ def run_ingest_plan(*, source_path: Path, data_dir: Path,
             source_hash=src_hash,
         )
         if finalized is not None:
-            taxonomy = finalized["taxonomy"]
+            # finalize_taxonomy returns the same dict shape as load_taxonomy_cache.
+            taxonomy_cache = finalized
         else:
             emit_taxonomy_todo(
                 msgs, p["taxonomy_todo"],
@@ -144,6 +145,8 @@ def run_ingest_plan(*, source_path: Path, data_dir: Path,
                 "taxonomy_todos": todos,
                 "tagging_todos": 0,
             }
+
+    taxonomy = taxonomy_cache["taxonomy"]
 
     # Stage 2: tagging with taxonomy in hand.
     manifest = Manifest.load_or_init(p["manifest"], burst_threshold_min=burst_threshold_min)

@@ -20,7 +20,8 @@ def _complete_taxonomy_stage(data_dir, *, taxonomy=("banter", "small-talk")):
     assert len(todos) == 1, f"expected one taxonomy todo, got {len(todos)}"
     done_row = {
         "job_id": todos[0]["job_id"],
-        "response": {"taxonomy": list(taxonomy), "notes": "test taxonomy"},
+        "response": {"taxonomy": list(taxonomy), "concepts": list(taxonomy),
+                     "notes": "test taxonomy"},
     }
     (data_dir / "taxonomy.done.jsonl").write_text(
         json.dumps(done_row) + "\n", encoding="utf-8"
@@ -199,6 +200,7 @@ def test_run_ingest_plan_emits_tagging_when_taxonomy_cache_hit(tmp_path):
     (data_dir / "taxonomy.json").write_text(json.dumps({
         "source_hash": expected_hash,
         "taxonomy": ["greeting", "small-talk"],
+        "concepts": ["small-talk"],
         "notes": "",
     }), encoding="utf-8")
 
@@ -222,7 +224,7 @@ def test_run_ingest_finalize_writes_taxonomy_json_from_done(tmp_path):
     todo_row = load_todo(data_dir / "taxonomy.todo.jsonl")[0]
     (data_dir / "taxonomy.done.jsonl").write_text(json.dumps({
         "job_id": todo_row["job_id"],
-        "response": {"taxonomy": ["greeting"], "notes": "n/a"},
+        "response": {"taxonomy": ["greeting"], "concepts": [], "notes": "n/a"},
     }) + "\n", encoding="utf-8")
 
     run_ingest_finalize(data_dir=data_dir, min_burst_count=2, min_msg_count=20)
