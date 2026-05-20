@@ -85,12 +85,15 @@ def ingest(source, phase):
     name, source_path, data_dir, brain_dir = _paths_for(cfg, source)
     tagging_cfg = cfg.get("tagging", {})
     if phase == "plan":
+        me_cfg = cfg.get("me", {})
         stats = run_ingest_plan(
             source_path=source_path,
             data_dir=data_dir,
             burst_threshold_min=cfg["bursts"]["threshold_minutes"],
             tagging_description=tagging_cfg.get("description", ""),
             tagging_seed_tags=tagging_cfg.get("seed_tags") or None,
+            me_real_names=me_cfg.get("real_names") or None,
+            me_name=me_cfg.get("name", ""),
         )
     else:
         stats = run_ingest_finalize(

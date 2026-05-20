@@ -21,6 +21,7 @@ from signal_brain.tagging import (
 )
 from signal_brain.arcs import detect_arcs, write_arcs
 from signal_brain.manifest import Manifest
+from signal_brain.anonymize import compile_scrubber
 
 
 def _load_raw(path: Path) -> list[dict]:
@@ -71,18 +72,27 @@ def _data_paths(data_dir: Path) -> dict[str, Path]:
 def run_ingest_plan(*, source_path: Path, data_dir: Path,
                     burst_threshold_min: int,
                     tagging_description: str = "",
-                    tagging_seed_tags: list[str] | None = None) -> dict:
+                    tagging_seed_tags: list[str] | None = None,
+                    me_real_names: list[str] | None = None,
+                    me_name: str = "") -> dict:
     """Build msg_index + bursts, emit tagging todos. No LLM, no arcs yet.
 
     Idempotent: re-emitting todos for the same burst content is a no-op.
+
+    `me_real_names` + `me_name` configure the operator-identity scrubber. When
+    `me_real_names` is non-empty, occurrences of those patterns in message
+    bodies and quotes are replaced with `me_name` (or its first token, for
+    single-token patterns) before anything is written under `data_dir`.
     """
     data_dir = Path(data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     p = _data_paths(data_dir)
 
+    scrub = compile_scrubber(me_real_names or [], me_name)
+
     source = _load_raw(source_path)
     diff = diff_messages(source, p["msg_index"])
-    build_msg_index(source, p["msg_index"])
+    build_msg_index(source, p["msg_index"], scrub=scrub)
     msgs = load_msg_index(p["msg_index"])
     bursts = detect_bursts(msgs, threshold_min=burst_threshold_min)
     write_bursts(bursts, p["bursts"])

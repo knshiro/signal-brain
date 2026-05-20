@@ -120,3 +120,28 @@ def test_replan_after_finalize_emits_no_new_todos(tmp_path, mini_messages):
     stats = run_ingest_plan(source_path=src / "data.json",
                             data_dir=data_dir, burst_threshold_min=60)
     assert stats["tagging_todos"] == 0
+
+
+def test_run_ingest_plan_scrubs_real_names_when_configured(tmp_path):
+    """End-to-end: configuring real_names removes the literal from msg_index.jsonl."""
+    source = tmp_path / "src.jsonl"
+    source.write_text(json.dumps({
+        "date": "2026-05-05T13:18:00.000000",
+        "sender": "Friend",
+        "body": "Salut Ugo, ça va ?",
+        "quote": "",
+        "reactions": [],
+        "attachments": [],
+    }) + "\n", encoding="utf-8")
+
+    data_dir = tmp_path / "data"
+    run_ingest_plan(
+        source_path=source,
+        data_dir=data_dir,
+        burst_threshold_min=60,
+        me_real_names=["Ugo"],
+        me_name="Thomas Martin",
+    )
+    body = (data_dir / "msg_index.jsonl").read_text(encoding="utf-8")
+    assert "Ugo" not in body
+    assert "Thomas" in body
