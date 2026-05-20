@@ -52,8 +52,18 @@ def _finalize(msgs: list[dict], idx: int) -> dict:
     }
 
 
-def burst_content_hash(burst: dict, all_messages: list[dict]) -> str:
-    """SHA1 over msg_id + body + reactions for every message in the burst."""
+def burst_content_hash(
+    burst: dict,
+    all_messages: list[dict],
+    *,
+    taxonomy_hash: str = "",
+) -> str:
+    """SHA1 over msg_id + body + reactions for every message in the burst.
+
+    `taxonomy_hash` (optional) is folded into the digest. Pass the SHA of the
+    active taxonomy.json when one is in effect, so taxonomy changes invalidate
+    the burst cache and force retagging.
+    """
     by_id = {m["msg_id"]: m for m in all_messages}
     h = hashlib.sha1()
     for mid in burst["msg_ids"]:
@@ -64,6 +74,8 @@ def burst_content_hash(burst: dict, all_messages: list[dict]) -> str:
         h.update(b"\x00")
         h.update(json.dumps(m.get("reactions", []), sort_keys=True).encode())
         h.update(b"\x01")
+    h.update(b"\x02")
+    h.update(taxonomy_hash.encode("utf-8"))
     return f"sha1:{h.hexdigest()}"
 
 
