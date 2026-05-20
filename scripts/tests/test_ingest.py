@@ -210,6 +210,26 @@ def test_run_ingest_plan_emits_tagging_when_taxonomy_cache_hit(tmp_path):
     assert "greeting" in row["user_prompt"]
 
 
+def test_run_ingest_finalize_writes_taxonomy_json_from_done(tmp_path):
+    """If taxonomy.done has a row matching the current source_hash, finalize writes the cache."""
+    source = tmp_path / "src.jsonl"
+    source.write_text(json.dumps({
+        "date": "2026-05-05T13:00:00", "sender": "Me", "body": "hi"
+    }) + "\n", encoding="utf-8")
+    data_dir = tmp_path / "data"
+    # Drive a plan to produce taxonomy.todo and msg_index.
+    run_ingest_plan(source_path=source, data_dir=data_dir, burst_threshold_min=60)
+    todo_row = load_todo(data_dir / "taxonomy.todo.jsonl")[0]
+    (data_dir / "taxonomy.done.jsonl").write_text(json.dumps({
+        "job_id": todo_row["job_id"],
+        "response": {"taxonomy": ["greeting"], "notes": "n/a"},
+    }) + "\n", encoding="utf-8")
+
+    run_ingest_finalize(data_dir=data_dir, min_burst_count=2, min_msg_count=20)
+    data = json.loads((data_dir / "taxonomy.json").read_text(encoding="utf-8"))
+    assert data["taxonomy"] == ["greeting"]
+
+
 def test_run_ingest_plan_scrubs_real_names_when_configured(tmp_path):
     """End-to-end: configuring real_names removes the literal from msg_index.jsonl."""
     source = tmp_path / "src.jsonl"

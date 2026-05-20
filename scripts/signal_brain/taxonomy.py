@@ -58,7 +58,7 @@ def build_system_prompt(description: str = "") -> str:
         "  recurring themes. Too few collapses distinct topics; too many fragments\n"
         "  shared themes into unique ones.\n"
         "- Prefer compound slugs that name concrete themes (e.g.\n"
-        "  \"wealth-concentration\", \"media-criticism\") over generic single words\n"
+        "  \"home-renovation\", \"book-recommendations\") over generic single words\n"
         "  (e.g. \"money\", \"news\").\n"
         "- The `notes` field is one or two sentences summarising the taxonomy.\n"
     )

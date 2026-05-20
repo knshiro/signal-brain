@@ -184,6 +184,16 @@ def run_ingest_finalize(*, data_dir: Path,
     data_dir = Path(data_dir)
     p = _data_paths(data_dir)
 
+    # Finalize the taxonomy stage too: a caller may run --finalize after
+    # producing taxonomy.done out-of-band. Idempotent, and a no-op when there
+    # is no matching done row.
+    msgs = load_msg_index(p["msg_index"])
+    src_hash = source_content_hash(msgs)
+    finalize_taxonomy(
+        p["taxonomy_todo"], p["taxonomy_done"], p["taxonomy_cache"],
+        source_hash=src_hash,
+    )
+
     bursts = [json.loads(l) for l in p["bursts"].read_text(encoding="utf-8").splitlines() if l.strip()]
     manifest = Manifest.load_or_init(p["manifest"], burst_threshold_min=0)
     cache_by_id = load_chunks_as_cache(p["chunks"], manifest.content_hashes)
