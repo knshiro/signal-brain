@@ -1,4 +1,5 @@
 import json
+from signal_brain.anonymize import compile_scrubber
 from signal_brain.msg_index import build_msg_index, msg_id
 
 
@@ -25,3 +26,53 @@ def test_build_msg_index_deduplicates_on_msg_id(tmp_data_dir):
     out = tmp_data_dir / "msg_index.jsonl"
     build_msg_index(duplicates, out)
     assert len(out.read_text().splitlines()) == 1
+
+
+def test_build_msg_index_scrubs_body_when_scrubber_provided(tmp_data_dir):
+    messages = [
+        {"date": "2026-05-05T13:18:00.000000", "sender": "Friend",
+         "body": "Hey Ugo, look at this", "quote": "", "reactions": [], "attachments": []},
+    ]
+    scrub = compile_scrubber(["Ugo"], "Thomas Martin")
+    out = tmp_data_dir / "msg_index.jsonl"
+    build_msg_index(messages, out, scrub=scrub)
+    row = json.loads(out.read_text(encoding="utf-8").splitlines()[0])
+    assert row["body"] == "Hey Thomas, look at this"
+    assert "Ugo" not in row["body"]
+
+
+def test_build_msg_index_scrubs_quote_field(tmp_data_dir):
+    messages = [
+        {"date": "2026-05-05T13:18:00.000000", "sender": "Friend",
+         "body": "réponse", "quote": "Ugo a écrit ça", "reactions": [], "attachments": []},
+    ]
+    scrub = compile_scrubber(["Ugo"], "Thomas Martin")
+    out = tmp_data_dir / "msg_index.jsonl"
+    build_msg_index(messages, out, scrub=scrub)
+    row = json.loads(out.read_text(encoding="utf-8").splitlines()[0])
+    assert row["quote"] == "Thomas a écrit ça"
+
+
+def test_build_msg_index_scrubber_default_is_identity(tmp_data_dir):
+    """Without a scrubber, body is passed through unchanged (back-compat)."""
+    messages = [
+        {"date": "2026-05-05T13:18:00.000000", "sender": "Friend",
+         "body": "Hey Ugo", "quote": "", "reactions": [], "attachments": []},
+    ]
+    out = tmp_data_dir / "msg_index.jsonl"
+    build_msg_index(messages, out)  # no scrub kwarg
+    row = json.loads(out.read_text(encoding="utf-8").splitlines()[0])
+    assert row["body"] == "Hey Ugo"
+
+
+def test_build_msg_index_char_count_uses_scrubbed_length(tmp_data_dir):
+    """char_count must reflect the post-scrub body, not the original."""
+    messages = [
+        {"date": "2026-05-05T13:18:00.000000", "sender": "Friend",
+         "body": "Ugo", "quote": "", "reactions": [], "attachments": []},
+    ]
+    scrub = compile_scrubber(["Ugo"], "Thomas Martin")
+    out = tmp_data_dir / "msg_index.jsonl"
+    build_msg_index(messages, out, scrub=scrub)
+    row = json.loads(out.read_text(encoding="utf-8").splitlines()[0])
+    assert row["char_count"] == len("Thomas")
